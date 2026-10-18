@@ -60,6 +60,10 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<UserRole> UserRoles { get; set; }
 
+    public virtual DbSet<Achievement> Achievements { get; set; }
+
+    public virtual DbSet<UserAchievement> UserAchievements { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder
@@ -823,6 +827,83 @@ public partial class AppDbContext : DbContext
                 .HasForeignKey(d => d.RoleId)
                 .OnDelete(DeleteBehavior.Restrict)
                 .HasConstraintName("user_roles_role_id_fkey");
+        });
+
+        modelBuilder.Entity<Achievement>(entity =>
+        {
+            entity.ToTable("achievements", "public");
+
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Id)
+                .UseIdentityByDefaultColumn();
+
+            entity.Property(e => e.Code)
+                .HasMaxLength(100)
+                .IsRequired();
+
+            entity.HasIndex(e => e.Code)
+                .IsUnique();
+
+            entity.Property(e => e.Name)
+                .HasMaxLength(200)
+                .IsRequired();
+
+            entity.Property(e => e.Description);
+
+            entity.Property(e => e.IconUrl)
+                .HasColumnName("icon_url")
+                .HasMaxLength(500);
+
+            entity.Property(e => e.ConditionType)
+                .HasColumnName("condition_type")
+                .HasMaxLength(100)
+                .IsRequired();
+
+            entity.Property(e => e.ConditionValue)
+                .HasColumnName("condition_value")
+                .IsRequired();
+
+            entity.Property(e => e.IsActive)
+                .HasColumnName("is_active")
+                .HasDefaultValue(true);
+
+            entity.Property(e => e.CreatedAt)
+                .HasColumnName("created_at")
+                .HasDefaultValueSql("now()");
+        });
+
+        modelBuilder.Entity<UserAchievement>(entity =>
+        {
+            entity.ToTable("user_achievements", "public");
+
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Id)
+                .UseIdentityByDefaultColumn();
+
+            entity.Property(e => e.UserId)
+                .HasColumnName("user_id")
+                .IsRequired();
+
+            entity.Property(e => e.AchievementId)
+                .HasColumnName("achievement_id")
+                .IsRequired();
+
+            entity.Property(e => e.EarnedAt)
+                .HasColumnName("earned_at")
+                .HasDefaultValueSql("now()");
+
+            entity.HasIndex(e => new
+            {
+                e.UserId,
+                e.AchievementId
+            }).IsUnique();
+
+            entity.HasOne(e => e.Achievement)
+                .WithMany(e => e.UserAchievements)
+                .HasForeignKey(e => e.AchievementId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         OnModelCreatingPartial(modelBuilder);
