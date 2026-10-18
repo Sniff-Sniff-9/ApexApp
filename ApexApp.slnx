@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="ApexApp.Api/ApexApp.Api.csproj" />
+  <Project Path="ApexApp.Domain/ApexApp.Domain.csproj" Id="7ac8bcda-0363-416b-a8bb-e3e6f10e13e7" />
+  <Project Path="ApexApp.Infrastructure/ApexApp.Infrastructure.csproj" Id="0c38a949-07a4-478e-81d1-11a8ec75772d" />
+</Solution>
