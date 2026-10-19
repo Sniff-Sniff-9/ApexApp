@@ -1,6 +1,7 @@
 using ApexApp.Api.Authorization;
 using ApexApp.Infrastructure.Auth;
 using ApexApp.Infrastructure.Data;
+using ApexApp.Infrastructure.Repositories;
 using ApexApp.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -16,6 +17,9 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.AddScoped<IUserProfileService, UserProfileService>();
 builder.Services.AddScoped<IRoleManagementService, RoleManagementService>();
+builder.Services.AddScoped<IBalanceRepository, BalanceRepository>();
+builder.Services.AddScoped<ITransactionRepository, TransactionRepository>();
+builder.Services.AddScoped<IBalanceService, BalanceService>();
 builder.Services.AddScoped<IClaimsTransformation, UserClaimsTransformation>();
 builder.Services.AddSingleton<IAuthorizationHandler, ActiveUserHandler>();
 builder.Services.AddSingleton<IAuthorizationHandler, AnyRoleHandler>();
