@@ -9,6 +9,8 @@ public partial class Transaction
 
     public Guid UserId { get; set; }
 
+    public TransactionType Type { get; set; }
+
     public long Amount { get; set; }
 
     public long BalanceAfter { get; set; }

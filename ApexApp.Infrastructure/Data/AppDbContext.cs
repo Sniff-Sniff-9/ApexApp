@@ -76,16 +76,16 @@ public partial class AppDbContext : DbContext
             .HasPostgresEnum("auth", "oauth_registration_type", new[] { "dynamic", "manual" })
             .HasPostgresEnum("auth", "oauth_response_type", new[] { "code" })
             .HasPostgresEnum("auth", "one_time_token_type", new[] { "confirmation_token", "reauthentication_token", "recovery_token", "email_change_token_new", "email_change_token_current", "phone_change_token" })
-            .HasPostgresEnum("balance_type", new[] { "personal", "reward" })
-            .HasPostgresEnum("order_status", new[] { "pending", "paid", "processing", "ready", "delivered", "cancelled", "refunded" })
+            .HasPostgresEnum<BalanceType>(name: "balance_type")
+            .HasPostgresEnum<OrderStatus>(name: "order_status")
             .HasPostgresEnum("participation_status", new[] { "joined", "in_progress", "completed", "failed", "cancelled" })
-            .HasPostgresEnum("quest_step_completion_type", new[] { "manual", "proof", "automatic" })
+            .HasPostgresEnum<QuestStepCompletionType>(name: "quest_step_completion_type")
             .HasPostgresEnum("question_type", new[] { "single", "multiple", "text", "rating", "scale" })
             .HasPostgresEnum("realtime", "action", new[] { "INSERT", "UPDATE", "DELETE", "TRUNCATE", "ERROR" })
             .HasPostgresEnum("realtime", "equality_op", new[] { "eq", "neq", "lt", "lte", "gt", "gte", "in", "like", "ilike", "is", "match", "imatch", "isdistinct" })
             .HasPostgresEnum("storage", "buckettype", new[] { "STANDARD", "ANALYTICS", "VECTOR" })
-            .HasPostgresEnum("ticket_status", new[] { "open", "in_progress", "resolved", "closed" })
-            .HasPostgresEnum("transaction_type", new[] { "activity_reward", "thanks", "manager_bonus", "purchase", "refund", "admin_adjustment", "daily_bonus", "other" })
+            .HasPostgresEnum<TicketStatus>(name: "ticket_status")
+            .HasPostgresEnum<TransactionType>(name: "transaction_type")
             .HasPostgresExtension("extensions", "pg_stat_statements")
             .HasPostgresExtension("extensions", "pgcrypto")
             .HasPostgresExtension("extensions", "uuid-ossp")
@@ -93,22 +93,28 @@ public partial class AppDbContext : DbContext
 
         modelBuilder.Entity<Balance>(entity =>
         {
-            entity.HasKey(e => e.UserId).HasName("balances_pkey");
+            entity.HasKey(e => new { e.UserId, e.Type })
+            .HasName("balances_pkey");
 
             entity.ToTable("balances");
 
             entity.Property(e => e.UserId)
                 .ValueGeneratedNever()
                 .HasColumnName("user_id");
+            entity.Property(e => e.Type)
+            .HasColumnName("type")
+            .HasColumnType("balance_type")
+            .IsRequired();
             entity.Property(e => e.Amount).HasColumnName("amount");
             entity.Property(e => e.UpdatedAt)
                 .HasDefaultValueSql("now()")
                 .HasColumnName("updated_at");
             entity.Property(e => e.Version).HasColumnName("version");
 
-            entity.HasOne(d => d.User).WithOne(p => p.Balance)
-                .HasForeignKey<Balance>(d => d.UserId)
-                .HasConstraintName("balances_user_id_fkey");
+            entity.HasOne(d => d.User)
+            .WithMany(p => p.Balances)
+            .HasForeignKey(d => d.UserId)
+            .HasConstraintName("balances_user_id_fkey");
         });
 
         modelBuilder.Entity<CartItem>(entity =>
@@ -234,6 +240,11 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Id)
                 .UseIdentityAlwaysColumn()
                 .HasColumnName("id");
+            entity.Property(e => e.Status)
+                .HasColumnName("status")
+                .HasColumnType("order_status")
+                .IsRequired()
+                .HasDefaultValue(OrderStatus.Pending);
             entity.Property(e => e.Comment).HasColumnName("comment");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("now()")
@@ -443,6 +454,11 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Id)
                 .UseIdentityAlwaysColumn()
                 .HasColumnName("id");
+            entity.Property(e => e.CompletionType)
+                .HasColumnName("completion_type")
+                .HasColumnType("quest_step_completion_type")
+                .IsRequired()
+                .HasDefaultValue(QuestStepCompletionType.Manual);
             entity.Property(e => e.CompletionData)
                 .HasColumnType("jsonb")
                 .HasColumnName("completion_data");
@@ -558,6 +574,11 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Id)
                 .UseIdentityAlwaysColumn()
                 .HasColumnName("id");
+            entity.Property(e => e.Status)
+                .HasColumnName("status")
+                .HasColumnType("ticket_status")
+                .IsRequired()
+                .HasDefaultValue(TicketStatus.Open);
             entity.Property(e => e.AssignedTo).HasColumnName("assigned_to");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("now()")
@@ -755,6 +776,10 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("now()")
                 .HasColumnName("created_at");
+            entity.Property(e => e.Type)
+                .HasColumnName("type")
+                .HasColumnType("transaction_type")
+                .IsRequired();
             entity.Property(e => e.CreatedBy).HasColumnName("created_by");
             entity.Property(e => e.Description).HasColumnName("description");
             entity.Property(e => e.RelatedEntityId).HasColumnName("related_entity_id");

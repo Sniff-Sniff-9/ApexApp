@@ -9,6 +9,8 @@ public partial class Order
 
     public Guid UserId { get; set; }
 
+    public OrderStatus Status { get; set; }
+
     public long TotalAmount { get; set; }
 
     public DateTime CreatedAt { get; set; }

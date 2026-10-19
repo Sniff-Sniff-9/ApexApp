@@ -39,7 +39,7 @@ namespace ApexApp.Infrastructure.Migrations
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "realtime", "equality_op", new[] { "eq", "neq", "lt", "lte", "gt", "gte", "in", "like", "ilike", "is", "match", "imatch", "isdistinct" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "storage", "buckettype", new[] { "STANDARD", "ANALYTICS", "VECTOR" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "ticket_status", new[] { "open", "in_progress", "resolved", "closed" });
-            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "transaction_type", new[] { "activity_reward", "thanks", "manager_bonus", "purchase", "refund", "admin_adjustment", "daily_bonus", "other" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "transaction_type", new[] { "activity_reward", "thanks", "manager_bonus", "purchase", "refund", "admin_adjustment", "daily_bonus", "other", "achievement_reward" });
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "extensions", "pg_stat_statements");
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "extensions", "pgcrypto");
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "extensions", "uuid-ossp");
@@ -108,6 +108,12 @@ namespace ApexApp.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("user_id");
 
+                    b.Property<int>("Type")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("balance_type")
+                        .HasDefaultValue(0)
+                        .HasColumnName("type");
+
                     b.Property<long>("Amount")
                         .HasColumnType("bigint")
                         .HasColumnName("amount");
@@ -122,7 +128,7 @@ namespace ApexApp.Infrastructure.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("version");
 
-                    b.HasKey("UserId")
+                    b.HasKey("UserId", "Type")
                         .HasName("balances_pkey");
 
                     b.ToTable("balances", (string)null);
@@ -336,6 +342,12 @@ namespace ApexApp.Infrastructure.Migrations
                     b.Property<Guid?>("ProcessedBy")
                         .HasColumnType("uuid")
                         .HasColumnName("processed_by");
+
+                    b.Property<int>("Status")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("order_status")
+                        .HasDefaultValue(0)
+                        .HasColumnName("status");
 
                     b.Property<long>("TotalAmount")
                         .HasColumnType("bigint")
@@ -668,6 +680,12 @@ namespace ApexApp.Infrastructure.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("completion_data");
 
+                    b.Property<int>("CompletionType")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("quest_step_completion_type")
+                        .HasDefaultValue(0)
+                        .HasColumnName("completion_type");
+
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
@@ -851,6 +869,12 @@ namespace ApexApp.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at")
                         .HasDefaultValueSql("now()");
+
+                    b.Property<int>("Status")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("ticket_status")
+                        .HasDefaultValue(0)
+                        .HasColumnName("status");
 
                     b.Property<string>("Subject")
                         .IsRequired()
@@ -1169,6 +1193,10 @@ namespace ApexApp.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("related_user_id");
 
+                    b.Property<int>("Type")
+                        .HasColumnType("transaction_type")
+                        .HasColumnName("type");
+
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid")
                         .HasColumnName("user_id");
@@ -1310,8 +1338,8 @@ namespace ApexApp.Infrastructure.Migrations
             modelBuilder.Entity("ApexApp.Domain.Entities.Balance", b =>
                 {
                     b.HasOne("ApexApp.Domain.Entities.User", "User")
-                        .WithOne("Balance")
-                        .HasForeignKey("ApexApp.Domain.Entities.Balance", "UserId")
+                        .WithMany("Balances")
+                        .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("balances_user_id_fkey");
@@ -1771,7 +1799,7 @@ namespace ApexApp.Infrastructure.Migrations
 
             modelBuilder.Entity("ApexApp.Domain.Entities.User", b =>
                 {
-                    b.Navigation("Balance");
+                    b.Navigation("Balances");
 
                     b.Navigation("CartItems");
 

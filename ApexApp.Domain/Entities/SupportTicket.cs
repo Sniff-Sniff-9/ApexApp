@@ -9,6 +9,8 @@ public partial class SupportTicket
 
     public Guid UserId { get; set; }
 
+    public TicketStatus Status { get; set; }
+
     public string Subject { get; set; } = null!;
 
     public Guid? AssignedTo { get; set; }

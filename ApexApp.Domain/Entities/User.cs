@@ -27,7 +27,7 @@ public partial class User
 
     public DateTime UpdatedAt { get; set; }
 
-    public virtual Balance? Balance { get; set; }
+    public ICollection<Balance> Balances { get; set; } = new List<Balance>();
 
     public virtual ICollection<CartItem> CartItems { get; set; } = new List<CartItem>();
 

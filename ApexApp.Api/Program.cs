@@ -1,4 +1,5 @@
 using ApexApp.Api.Authorization;
+using ApexApp.Api.Swagger;
 using ApexApp.Infrastructure.Auth;
 using ApexApp.Infrastructure.Data;
 using ApexApp.Infrastructure.Repositories;
@@ -8,12 +9,22 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using System.Reflection;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(
-        builder.Configuration.GetConnectionString("DefaultConnection")));
+        builder.Configuration.GetConnectionString("DefaultConnection"),
+        npgsql =>
+        {
+            npgsql.MapEnum<BalanceType>("balance_type");
+            npgsql.MapEnum<TransactionType>("transaction_type");
+            npgsql.MapEnum<OrderStatus>("order_status");
+            npgsql.MapEnum<TicketStatus>("ticket_status");
+            npgsql.MapEnum<QuestStepCompletionType>("quest_step_completion_type");
+        }));
 
 builder.Services.AddScoped<IUserProfileService, UserProfileService>();
 builder.Services.AddScoped<IRoleManagementService, RoleManagementService>();
@@ -24,7 +35,13 @@ builder.Services.AddScoped<IClaimsTransformation, UserClaimsTransformation>();
 builder.Services.AddSingleton<IAuthorizationHandler, ActiveUserHandler>();
 builder.Services.AddSingleton<IAuthorizationHandler, AnyRoleHandler>();
 
-builder.Services.AddControllers();
+builder.Services
+    .AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(
+            new JsonStringEnumConverter());
+    });
 
 builder.Services.AddSwaggerGen(options =>
 {
@@ -43,6 +60,12 @@ builder.Services.AddSwaggerGen(options =>
         {
             [new Microsoft.OpenApi.OpenApiSecuritySchemeReference("Bearer", document)] = []
         });
+
+    var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+
+    options.IncludeXmlComments(xmlPath);
+    options.OperationFilter<AuthorizationRequirementsOperationFilter>();
 });
 
 var supabaseUrl = builder.Configuration["Supabase:ProjectUrl"] ??
@@ -62,10 +85,18 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateAudience = true,
             ValidAudience = "authenticated",
             ValidateLifetime = true,
-            NameClaimType = "sub"
+            NameClaimType = "sub",
+            RoleClaimType = "user_role"
         };
     });
 
+builder.Services.AddHttpClient();
+
+/// <summary>
+/// Настройка политики авторизации для приложения. Определяются различные политики, 
+/// которые проверяют аутентификацию пользователя, его активность и наличие определенных 
+/// ролей для доступа к различным функциональным возможностям приложения.
+/// </summary>
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy(AppPolicies.ActiveUser, policy =>
@@ -111,17 +142,6 @@ builder.Services.AddAuthorization(options =>
 });
 
 var app = builder.Build();
-
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider
-        .GetRequiredService<AppDbContext>();
-
-    var canConnect = await db.Database.CanConnectAsync();
-
-    Console.WriteLine(
-        $"Supabase PostgreSQL connection: {canConnect}");
-}
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

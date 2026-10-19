@@ -7,6 +7,8 @@ public partial class Balance
 {
     public Guid UserId { get; set; }
 
+    public BalanceType Type { get; set; }
+
     public long Amount { get; set; }
 
     public int Version { get; set; }

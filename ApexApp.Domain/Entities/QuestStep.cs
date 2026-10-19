@@ -13,6 +13,8 @@ public partial class QuestStep
 
     public string? Description { get; set; }
 
+    public QuestStepCompletionType CompletionType { get; set; }
+
     public int SortOrder { get; set; }
 
     public bool IsRequired { get; set; }
