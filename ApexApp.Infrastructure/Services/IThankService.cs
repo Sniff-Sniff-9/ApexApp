@@ -21,4 +21,9 @@ public interface IThankService
         Guid userId,
         long id,
         CancellationToken cancellationToken = default);
+
+    Task<ThanksResult> GiveManagerBonusAsync(
+        Guid managerId,
+        CreateManagerBonusRequest request,
+        CancellationToken cancellationToken = default);
 }

@@ -35,6 +35,13 @@ builder.Services.AddScoped<IClaimsTransformation, UserClaimsTransformation>();
 builder.Services.AddSingleton<IAuthorizationHandler, ActiveUserHandler>();
 builder.Services.AddScoped<IThankService, ThankService>();
 builder.Services.AddSingleton<IAuthorizationHandler, AnyRoleHandler>();
+builder.Services.AddScoped<CategoryRepository>();
+builder.Services.AddScoped<ProductRepository>();
+builder.Services.AddScoped<ICategoryService, CategoryService>();
+builder.Services.AddScoped<IProductService, ProductService>();
+builder.Services.AddScoped<CartRepository>();
+builder.Services.AddScoped<ICartService, CartService>();
+builder.Services.AddScoped<IOrderService, OrderService>();
 
 builder.Services
     .AddControllers()

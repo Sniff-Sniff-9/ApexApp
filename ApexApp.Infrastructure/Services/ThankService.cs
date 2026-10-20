@@ -155,6 +155,135 @@ public sealed class ThankService(AppDbContext dbContext) : IThankService
             .Include(t => t.ToUser)
             .FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
     }
+
+    public async Task<ThanksResult> GiveManagerBonusAsync(
+    Guid managerId,
+    CreateManagerBonusRequest request,
+    CancellationToken cancellationToken = default)
+    {
+        if (managerId == Guid.Empty || request.ToUserId == Guid.Empty)
+            return ThanksResult.Fail(400, "Invalid user ID.");
+
+        if (managerId == request.ToUserId)
+            return ThanksResult.Fail(400, "You cannot award yourself.");
+
+        if (request.Amount <= 0)
+            return ThanksResult.Fail(400, "Amount must be positive.");
+
+        await using var dbTransaction =
+            await dbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+
+        var now = DateTime.UtcNow;
+
+        var managerExists = await dbContext.Users
+            .AnyAsync(u => u.Id == managerId, cancellationToken);
+
+        if (!managerExists)
+            return ThanksResult.Fail(404, "Manager was not found.");
+
+        var recipientExists = await dbContext.Users
+            .AnyAsync(u => u.Id == request.ToUserId, cancellationToken);
+
+        if (!recipientExists)
+            return ThanksResult.Fail(404, "Recipient was not found.");
+
+        var managerBalance = await dbContext.Balances
+            .SingleOrDefaultAsync(
+                b => b.UserId == managerId &&
+                     b.Type == BalanceType.Reward,
+                cancellationToken);
+
+        if (managerBalance is null ||
+            managerBalance.Amount < request.Amount)
+        {
+            return ThanksResult.Fail(
+                409, "Insufficient reward balance.");
+        }
+
+        var recipientBalance = await dbContext.Balances
+            .SingleOrDefaultAsync(
+                b => b.UserId == request.ToUserId &&
+                     b.Type == BalanceType.Personal,
+                cancellationToken);
+
+        var isNewRecipientBalance = recipientBalance is null;
+
+        recipientBalance ??= new Balance
+        {
+            UserId = request.ToUserId,
+            Type = BalanceType.Personal,
+            Amount = 0,
+            Version = 0,
+            UpdatedAt = now
+        };
+
+        long managerNewAmount;
+        long recipientNewAmount;
+
+        try
+        {
+            managerNewAmount =
+                checked(managerBalance.Amount - request.Amount);
+
+            recipientNewAmount =
+                checked(recipientBalance.Amount + request.Amount);
+
+            managerBalance.Version =
+                checked(managerBalance.Version + 1);
+
+            recipientBalance.Version =
+                checked(recipientBalance.Version + 1);
+        }
+        catch (OverflowException)
+        {
+            return ThanksResult.Fail(
+                400, "Balance exceeds the supported range.");
+        }
+
+        managerBalance.Amount = managerNewAmount;
+        managerBalance.UpdatedAt = now;
+
+        recipientBalance.Amount = recipientNewAmount;
+        recipientBalance.UpdatedAt = now;
+
+        if (isNewRecipientBalance)
+            dbContext.Balances.Add(recipientBalance);
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        dbContext.Set<Transaction>().Add(new Transaction
+        {
+            UserId = managerId,
+            Type = TransactionType.ManagerBonus,
+            Amount = -request.Amount,
+            BalanceAfter = managerNewAmount,
+            Description = request.Message,
+            CreatedBy = managerId,
+            RelatedUserId = request.ToUserId,
+            RelatedEntityType = "manager_bonus",
+            CreatedAt = now
+        });
+
+        dbContext.Set<Transaction>().Add(new Transaction
+        {
+            UserId = request.ToUserId,
+            Type = TransactionType.ManagerBonus,
+            Amount = request.Amount,
+            BalanceAfter = recipientNewAmount,
+            Description = request.Message,
+            CreatedBy = managerId,
+            RelatedUserId = managerId,
+            RelatedEntityType = "manager_bonus",
+            CreatedAt = now
+        });
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await dbTransaction.CommitAsync(cancellationToken);
+
+        return new ThanksResult(201, null, null);
+    }
 }
 
 public sealed record ThanksResult(

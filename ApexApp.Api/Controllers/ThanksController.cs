@@ -175,4 +175,43 @@ public sealed class ThanksController : ApiControllerBase
             thank.CreatedAt
         });
     }
+
+    /// <summary>
+    /// Отправить поощрение пользователю от руководителя.
+    /// </summary>
+    /// <returns>Информация о поощрении пользователя.</returns>
+    /// <response code="201">Поощрение успешно отправлено .</response>
+    /// <response code="401">Пользователь не авторизован.</response>
+    /// <response code="404">Пользователь не найден.</response>
+    [HttpPost("manager-bonus")]
+    [Authorize(Policy = AppPolicies.IssueBonus)]
+    public async Task<IActionResult> GiveManagerBonus(
+    [FromBody] CreateManagerBonusRequest request,
+    CancellationToken cancellationToken)
+    {
+        var managerId = User.GetUserId();
+
+        if (managerId is null)
+            return Unauthorized();
+
+        var result = await _thankService.GiveManagerBonusAsync(
+            managerId.Value,
+            request,
+            cancellationToken);
+
+        if (result.Error is not null)
+        {
+            return StatusCode(
+                result.StatusCode,
+                new { message = result.Error });
+        }
+
+        return StatusCode(StatusCodes.Status201Created, new
+        {
+            message = "Manager bonus awarded successfully.",
+            recipientId = request.ToUserId,
+            request.Amount,
+            request.Message
+        });
+    }
 }
