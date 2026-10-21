@@ -71,8 +71,6 @@ public sealed class ProductService(
         product.Stock = input.Stock;
         product.IsActive = input.IsActive;
         product.IsDigital = input.IsDigital;
-        product.Tags = input.Tags;
-        product.Metadata = input.Metadata;
         product.UpdatedAt = DateTime.UtcNow;
 
         await repository.SaveChangesAsync(cancellationToken);
@@ -125,9 +123,6 @@ public sealed class ProductService(
 
         if (product.IsDigital)
             return "Digital products are not supported yet.";
-
-        if (string.IsNullOrWhiteSpace(product.Metadata))
-            return "Metadata is required.";
 
         return null;
     }

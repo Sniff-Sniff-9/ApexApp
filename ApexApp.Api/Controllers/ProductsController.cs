@@ -103,9 +103,7 @@ public sealed class ProductsController : ApiControllerBase
             ImageUrl = request.ImageUrl,
             Stock = request.Stock,
             IsActive = request.IsActive,
-            IsDigital = request.IsDigital,
-            Tags = request.Tags,
-            Metadata = request.Metadata
+            IsDigital = request.IsDigital
         };
 
         var result = await _productService.CreateAsync(product, cancellationToken);
@@ -143,9 +141,7 @@ public sealed class ProductsController : ApiControllerBase
             ImageUrl = request.ImageUrl,
             Stock = request.Stock,
             IsActive = request.IsActive,
-            IsDigital = request.IsDigital,
-            Tags = request.Tags,
-            Metadata = request.Metadata
+            IsDigital = request.IsDigital
         };
 
         var result = await _productService.UpdateAsync(
@@ -202,8 +198,6 @@ public sealed class ProductsController : ApiControllerBase
             product.ImageUrl,
             product.Stock,
             product.IsDigital,
-            product.Tags,
-            product.Metadata,
             product.CreatedAt,
             product.UpdatedAt
         };

@@ -16,9 +16,7 @@
         string? ImageUrl,
         int? Stock,
         bool IsActive,
-        bool IsDigital,
-        List<string>? Tags,
-        string Metadata);
+        bool IsDigital);
 
     public sealed record UpdateProductRequest(
         int? CategoryId,
@@ -28,7 +26,5 @@
         string? ImageUrl,
         int? Stock,
         bool IsActive,
-        bool IsDigital,
-        List<string>? Tags,
-        string Metadata);
+        bool IsDigital);
 }

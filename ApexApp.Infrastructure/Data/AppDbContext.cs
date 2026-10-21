@@ -317,16 +317,11 @@ public partial class AppDbContext : DbContext
                 .HasDefaultValue(true)
                 .HasColumnName("is_active");
             entity.Property(e => e.IsDigital).HasColumnName("is_digital");
-            entity.Property(e => e.Metadata)
-                .HasDefaultValueSql("'{}'::jsonb")
-                .HasColumnType("jsonb")
-                .HasColumnName("metadata");
             entity.Property(e => e.Name)
                 .HasMaxLength(255)
                 .HasColumnName("name");
             entity.Property(e => e.Price).HasColumnName("price");
             entity.Property(e => e.Stock).HasColumnName("stock");
-            entity.Property(e => e.Tags).HasColumnName("tags");
             entity.Property(e => e.UpdatedAt)
                 .HasDefaultValueSql("now()")
                 .HasColumnName("updated_at");

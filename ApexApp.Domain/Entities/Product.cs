@@ -23,10 +23,6 @@ public partial class Product
 
     public bool IsDigital { get; set; }
 
-    public List<string>? Tags { get; set; }
-
-    public string Metadata { get; set; } = null!;
-
     public DateTime CreatedAt { get; set; }
 
     public DateTime UpdatedAt { get; set; }
