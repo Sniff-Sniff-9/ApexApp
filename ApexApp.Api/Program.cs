@@ -26,6 +26,20 @@ builder.Services.AddDbContext<AppDbContext>(options =>
             npgsql.MapEnum<QuestStepCompletionType>("quest_step_completion_type");
         }));
 
+var connectionString =
+    builder.Configuration.GetConnectionString("DefaultConnection");
+
+Console.WriteLine(
+    $"DefaultConnection exists: {!string.IsNullOrWhiteSpace(connectionString)}");
+
+if (!string.IsNullOrWhiteSpace(connectionString))
+{
+    var csb = new Npgsql.NpgsqlConnectionStringBuilder(connectionString);
+
+    Console.WriteLine(
+        $"DB Host present: {!string.IsNullOrWhiteSpace(csb.Host)}");
+}
+
 builder.Services.AddScoped<IUserProfileService, UserProfileService>();
 builder.Services.AddScoped<IRoleManagementService, RoleManagementService>();
 builder.Services.AddScoped<IBalanceRepository, BalanceRepository>();
