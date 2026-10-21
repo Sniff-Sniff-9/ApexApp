@@ -163,6 +163,7 @@ public sealed class ThanksController : ApiControllerBase
                 new { message = result.Error });
 
         var thank = result.Data!;
+        var newAchievement = result.NewAchievement;
 
         return StatusCode(StatusCodes.Status201Created, new
         {
@@ -172,7 +173,15 @@ public sealed class ThanksController : ApiControllerBase
             thank.Amount,
             thank.Message,
             thank.IsPublic,
-            thank.CreatedAt
+            thank.CreatedAt,
+            NewAchievement = newAchievement is null
+                ? null
+                : new
+                {
+                    newAchievement.Id,
+                    newAchievement.Code,
+                    newAchievement.Name
+                }
         });
     }
 

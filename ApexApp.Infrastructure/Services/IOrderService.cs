@@ -4,7 +4,7 @@ namespace ApexApp.Infrastructure.Services;
 
 public interface IOrderService
 {
-    Task<(bool Success, int StatusCode, string? Error, Order? Data)>
+    Task<(bool Success, int StatusCode, string? Error, Order? Data, Achievement? NewAchievement)>
         CheckoutAsync(
             Guid userId,
             CancellationToken cancellationToken = default);

@@ -1,5 +1,6 @@
 ﻿using ApexApp.Api.Authorization;
 using ApexApp.Api.Extensions;
+using ApexApp.Domain.Entities;
 using ApexApp.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -56,23 +57,37 @@ public sealed class OrdersController : ApiControllerBase
         }
 
         var order = result.Data!;
+        var newAchievement = result.NewAchievement;
 
         return CreatedAtAction(
-            nameof(GetById),
-            new { id = order.Id },
-            new
+        nameof(GetById),
+        new { id = order.Id },
+        new
+        {
+            order.Id,
+            order.Status,
+            order.TotalAmount,
+            order.CreatedAt,
+
+            Items = order.OrderItems.Select(i => new
             {
-                order.Id,
-                order.Status,
-                order.TotalAmount,
-                order.CreatedAt,
-                Items = order.OrderItems.Select(i => new
+                i.ProductId,
+                i.Quantity,
+                i.PriceAtPurchase
+            }),
+
+            NewAchievement = newAchievement is null
+                ? null
+                : new
                 {
-                    i.ProductId,
-                    i.Quantity,
-                    i.PriceAtPurchase
-                })
-            });
+                    newAchievement.Id,
+                    newAchievement.Code,
+                    newAchievement.Name,
+                    newAchievement.Description,
+                    newAchievement.IconUrl,
+                    newAchievement.RewardAmount
+                }
+        });
     }
 
     /// <summary>

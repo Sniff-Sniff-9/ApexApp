@@ -16,6 +16,8 @@ namespace ApexApp.Domain.Entities
 
         public string? IconUrl { get; set; }
 
+        public long RewardAmount { get; set; }
+
         public string ConditionType { get; set; } = string.Empty;
 
         public int ConditionValue { get; set; }

@@ -93,6 +93,10 @@ namespace ApexApp.Infrastructure.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<long>("RewardAmount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("reward_amount");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Code")

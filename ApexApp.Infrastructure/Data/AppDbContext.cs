@@ -856,9 +856,11 @@ public partial class AppDbContext : DbContext
             entity.HasKey(e => e.Id);
 
             entity.Property(e => e.Id)
-                .UseIdentityByDefaultColumn();
+                .UseIdentityByDefaultColumn()
+                .HasColumnName("id");
 
             entity.Property(e => e.Code)
+            .HasColumnName("code")
                 .HasMaxLength(100)
                 .IsRequired();
 
@@ -867,13 +869,19 @@ public partial class AppDbContext : DbContext
 
             entity.Property(e => e.Name)
                 .HasMaxLength(200)
+                .HasColumnName("name")
                 .IsRequired();
 
-            entity.Property(e => e.Description);
+            entity.Property(e => e.Description)
+            .HasColumnName("description");
 
             entity.Property(e => e.IconUrl)
                 .HasColumnName("icon_url")
                 .HasMaxLength(500);
+
+            entity.Property(e => e.RewardAmount)
+                   .HasColumnName("reward_amount")
+                   .IsRequired();
 
             entity.Property(e => e.ConditionType)
                 .HasColumnName("condition_type")
@@ -900,7 +908,8 @@ public partial class AppDbContext : DbContext
             entity.HasKey(e => e.Id);
 
             entity.Property(e => e.Id)
-                .UseIdentityByDefaultColumn();
+                .UseIdentityByDefaultColumn()
+                .HasColumnName("id");
 
             entity.Property(e => e.UserId)
                 .HasColumnName("user_id")

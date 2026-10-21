@@ -1,12 +1,24 @@
-﻿using System.Data;
-using ApexApp.Domain.Entities;
+﻿using ApexApp.Domain.Entities;
 using ApexApp.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using System.Data;
 
 namespace ApexApp.Infrastructure.Services;
 
-public sealed class ThankService(AppDbContext dbContext) : IThankService
+public sealed class ThankService : IThankService
 {
+    private readonly AppDbContext dbContext;
+    private readonly IAchievementService _achievementService;
+    private readonly ILogger<ThankService> _logger;
+
+    public ThankService(AppDbContext dbContext, IAchievementService achievementService, ILogger<ThankService> logger)
+    {
+        this.dbContext = dbContext;
+        _achievementService = achievementService;
+        _logger = logger;
+    }
+
     public async Task<ThanksResult> CreateAsync(
         Guid fromUserId,
         CreateThankRequest request,
@@ -50,6 +62,13 @@ public sealed class ThankService(AppDbContext dbContext) : IThankService
         if (alreadyThanked)
             return ThanksResult.Fail(
                 409, "You have already thanked this user in the last 7 days.");
+
+        var hasPreviousThank = await dbContext.Set<Thank>()
+            .AnyAsync(
+                t => t.FromUserId == fromUserId,
+                cancellationToken);
+
+        var isFirstThank = !hasPreviousThank;
 
         var balance = await dbContext.Balances
             .SingleOrDefaultAsync(
@@ -117,7 +136,39 @@ public sealed class ThankService(AppDbContext dbContext) : IThankService
         await dbContext.SaveChangesAsync(cancellationToken);
         await dbTransaction.CommitAsync(cancellationToken);
 
-        return ThanksResult.Ok(thank);
+        Achievement? newAchievement = null;
+
+        if (isFirstThank)
+        {
+            try
+            {
+                var achievementAwarded = await _achievementService.AwardAsync(
+                    fromUserId,
+                    "FIRST_THANK",
+                    BalanceType.Personal,
+                    TransactionType.AchievementReward,
+                    cancellationToken);
+
+                if (achievementAwarded)
+                {
+                    newAchievement = await dbContext.Achievements
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(
+                            a => a.Code == "FIRST_THANK",
+                            cancellationToken);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to award FIRST_THANK for user {UserId}, thank {ThankId}",
+                    fromUserId,
+                    thank.Id);
+            }
+        }
+
+        return ThanksResult.Ok(thank, newAchievement);
     }
 
     public async Task<List<Thank>> GetAllAsync(
@@ -282,20 +333,20 @@ public sealed class ThankService(AppDbContext dbContext) : IThankService
         await dbContext.SaveChangesAsync(cancellationToken);
         await dbTransaction.CommitAsync(cancellationToken);
 
-        return new ThanksResult(201, null, null);
+        return new ThanksResult(201, null, null, null);
     }
 }
 
 public sealed record ThanksResult(
     int StatusCode,
     string? Error,
-    Thank? Data)
+    Thank? Data, Achievement? NewAchievement)
 {
     public static ThanksResult Fail(int status, string error) =>
-        new(status, error, null);
+        new(status, error, null, null);
 
-    public static ThanksResult Ok(Thank thank) =>
-        new(201, null, thank);
+    public static ThanksResult Ok(Thank thank, Achievement? newAchievement = null) =>
+        new(201, null, thank, newAchievement);
 }
 
 public sealed record CreateThankRequest(

@@ -1,41 +1,53 @@
-﻿using System.Data;
-using ApexApp.Domain.Entities;
+﻿using ApexApp.Domain.Entities;
 using ApexApp.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Npgsql;
+using System.Data;
 
 namespace ApexApp.Infrastructure.Services;
 
-public sealed class OrderService(AppDbContext dbContext) : IOrderService
+public sealed class OrderService : IOrderService
 {
-    public async Task<(bool Success, int StatusCode, string? Error, Order? Data)>
+    private readonly AppDbContext _dbContext;
+    private readonly IAchievementService _achievementService;
+    private readonly ILogger<OrderService> _logger;
+
+    public OrderService(AppDbContext dbContext, IAchievementService achievementService, ILogger<OrderService> logger)
+    {
+        _dbContext = dbContext;
+        _achievementService = achievementService;
+        _logger = logger;
+    }
+
+    public async Task<(bool Success, int StatusCode, string? Error, Order? Data, Achievement? NewAchievement)>
         CheckoutAsync(
             Guid userId,
             CancellationToken cancellationToken = default)
     {
         if (userId == Guid.Empty)
-            return (false, 400, "Invalid user ID.", null);
+            return (false, 400, "Invalid user ID.", null, null);
 
         await using var transaction =
-            await dbContext.Database.BeginTransactionAsync(
+            await _dbContext.Database.BeginTransactionAsync(
                 IsolationLevel.Serializable, cancellationToken);
 
         try
         {
-            var cartItems = await dbContext.Set<CartItem>()
+            var cartItems = await _dbContext.Set<CartItem>()
                 .Where(x => x.UserId == userId)
                 .OrderBy(x => x.ProductId)
                 .ToListAsync(cancellationToken);
 
             if (cartItems.Count == 0)
-                return (false, 400, "Cart is empty.", null);
+                return (false, 400, "Cart is empty.", null, null);
 
             if (cartItems.Any(x => x.Quantity <= 0))
-                return (false, 400, "Cart contains an invalid quantity.", null);
+                return (false, 400, "Cart contains an invalid quantity.", null, null);
 
             var productIds = cartItems.Select(x => x.ProductId).Distinct().ToArray();
 
-            var products = await dbContext.Set<Product>()
+            var products = await _dbContext.Set<Product>()
                 .FromSqlInterpolated($"""
                     SELECT *
                     FROM public.products
@@ -46,7 +58,7 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
                 .ToListAsync(cancellationToken);
 
             if (products.Count != productIds.Length)
-                return (false, 409, "One or more products are unavailable.", null);
+                return (false, 409, "One or more products are unavailable.", null, null);
 
             var productsById = products.ToDictionary(p => p.Id);
 
@@ -57,10 +69,10 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
                 var product = productsById[item.ProductId];
 
                 if (!product.IsActive || product.IsDigital)
-                    return (false, 409, $"Product '{product.Name}' is unavailable.", null);
+                    return (false, 409, $"Product '{product.Name}' is unavailable.", null, null);
 
                 if (product.Stock.HasValue && product.Stock.Value < item.Quantity)
-                    return (false, 409, $"Insufficient stock for '{product.Name}'.", null);
+                    return (false, 409, $"Insufficient stock for '{product.Name}'.", null, null);
 
                 try
                 {
@@ -68,11 +80,11 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
                 }
                 catch (OverflowException)
                 {
-                    return (false, 400, "Order total exceeds the supported range.", null);
+                    return (false, 400, "Order total exceeds the supported range.", null, null);
                 }
             }
 
-            var balance = await dbContext.Balances
+            var balance = await _dbContext.Balances
                 .FromSqlInterpolated($"""
                     SELECT *
                     FROM public.balances
@@ -83,7 +95,7 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
                 .SingleOrDefaultAsync(cancellationToken);
 
             if (balance is null || balance.Amount < total)
-                return (false, 409, "Insufficient personal balance.", null);
+                return (false, 409, "Insufficient personal balance.", null, null);
 
             long newBalance;
 
@@ -94,10 +106,18 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
             }
             catch (OverflowException)
             {
-                return (false, 400, "Balance exceeds the supported range.", null);
+                return (false, 400, "Balance exceeds the supported range.", null, null);
             }
 
             var now = DateTime.UtcNow;
+
+            var hasPreviousPaidOrder = await _dbContext.Set<Order>()
+            .AnyAsync(
+                o => o.UserId == userId &&
+                     o.Status == OrderStatus.Paid,
+                cancellationToken);
+
+            var isFirstOrder = !hasPreviousPaidOrder;
 
             var order = new Order
             {
@@ -132,11 +152,11 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
                 product.UpdatedAt = now;
             }
 
-            dbContext.Set<Order>().Add(order);
+            _dbContext.Set<Order>().Add(order);
 
-            await dbContext.SaveChangesAsync(cancellationToken);
+            await _dbContext.SaveChangesAsync(cancellationToken);
 
-            dbContext.Set<Transaction>().Add(new Transaction
+            _dbContext.Set<Transaction>().Add(new Transaction
             {
                 UserId = userId,
                 Type = TransactionType.Purchase,
@@ -149,12 +169,45 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
                 CreatedAt = now
             });
 
-            dbContext.Set<CartItem>().RemoveRange(cartItems);
+            _dbContext.Set<CartItem>().RemoveRange(cartItems);
 
-            await dbContext.SaveChangesAsync(cancellationToken);
+            await _dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
 
-            return (true, 201, null, order);
+            Achievement? newAchievement = null;
+
+            if (isFirstOrder)
+            {
+                try
+                {
+                    var achievementAwarded = await _achievementService.AwardAsync(
+                        userId,
+                        "FIRST_ORDER",
+                        BalanceType.Personal,
+                        TransactionType.AchievementReward,
+                        cancellationToken);
+
+                    if (achievementAwarded)
+                    {
+                        newAchievement = await _dbContext.Achievements
+                            .AsNoTracking()
+                            .FirstOrDefaultAsync(
+                                a => a.Code == "FIRST_ORDER",
+                                cancellationToken);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(
+                        ex,
+                        "Failed to award FIRST_ORDER for user {UserId}, order {OrderId}",
+                        userId,
+                        order.Id);
+                }
+            }
+
+            return (true, 201, null, order, newAchievement);
+
         }
         catch (PostgresException ex)
             when (ex.SqlState == PostgresErrorCodes.SerializationFailure ||
@@ -163,7 +216,7 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
             await transaction.RollbackAsync(cancellationToken);
 
             return (false, 409,
-                "A concurrent purchase changed the data. Please retry.", null);
+                "A concurrent purchase changed the data. Please retry.", null, null);
         }
     }
 
@@ -171,7 +224,7 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
         Guid userId,
         CancellationToken cancellationToken = default)
     {
-        return dbContext.Set<Order>()
+        return _dbContext.Set<Order>()
             .AsNoTracking()
             .Where(o => o.UserId == userId)
             .Include(o => o.OrderItems)
@@ -185,7 +238,7 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
         long orderId,
         CancellationToken cancellationToken = default)
     {
-        return dbContext.Set<Order>()
+        return _dbContext.Set<Order>()
             .AsNoTracking()
             .Where(o => o.UserId == userId && o.Id == orderId)
             .Include(o => o.OrderItems)
@@ -215,11 +268,11 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
         }
 
         await using var transaction =
-            await dbContext.Database.BeginTransactionAsync(
+            await _dbContext.Database.BeginTransactionAsync(
                 IsolationLevel.Serializable,
                 cancellationToken);
 
-        var order = await dbContext.Set<Order>()
+        var order = await _dbContext.Set<Order>()
             .FirstOrDefaultAsync(
                 o => o.Id == orderId,
                 cancellationToken);
@@ -254,7 +307,7 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
         if (newStatus == OrderStatus.Processing)
             order.ProcessedBy = employeeId;
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await _dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
         return (true, 200, null, order);
