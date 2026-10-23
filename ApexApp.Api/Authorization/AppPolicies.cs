@@ -8,4 +8,6 @@ public static class AppPolicies
     public const string IssueBonus = "IssueBonus";
     public const string AdjustBalances = "AdjustBalances";
     public const string ViewAllTransactions = "ViewAllTransactions";
+    public const string ManageActivities = "ManageActivities";
+    public const string ModerateActivities = "ModerateActivities";
 }

@@ -58,6 +58,11 @@ builder.Services.AddScoped<ICartService, CartService>();
 builder.Services.AddScoped<IOrderService, OrderService>();
 builder.Services.AddScoped<IAchievementService, AchievementService>();
 builder.Services.AddScoped<ILeaderboardService, LeaderboardService>();
+builder.Services.AddScoped<ActivityRewardGranter>();
+builder.Services.AddScoped<IActivityRewardService, ActivityRewardService>();
+builder.Services.AddScoped<IQuestService, QuestService>();
+builder.Services.AddScoped<IEventService, EventService>();
+builder.Services.AddScoped<ISurveyService, SurveyService>();
 
 builder.Services
     .AddControllers()
@@ -162,6 +167,20 @@ builder.Services.AddAuthorization(options =>
         policy.RequireAuthenticatedUser();
         policy.AddRequirements(new ActiveUserRequirement());
         policy.AddRequirements(new AnyRoleRequirement(RoleCodes.Admin, RoleCodes.SuperAdmin));
+    });
+
+    options.AddPolicy(AppPolicies.ManageActivities, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(new ActiveUserRequirement());
+        policy.AddRequirements(new AnyRoleRequirement(RoleCodes.Admin, RoleCodes.SuperAdmin));
+    });
+
+    options.AddPolicy(AppPolicies.ModerateActivities, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(new ActiveUserRequirement());
+        policy.AddRequirements(new AnyRoleRequirement(RoleCodes.Manager, RoleCodes.Admin, RoleCodes.SuperAdmin));
     });
 });
 
