@@ -1,4 +1,5 @@
 ﻿using ApexApp.Api.Extensions;
+using ApexApp.Api.Authorization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity.Data;
 using Microsoft.AspNetCore.Mvc;
@@ -15,7 +16,11 @@ public class AuthController : ControllerBase
     /// <summary>
     /// Тестовый метод для проверки авторизации пользовател и корректности выданного токена.
     /// </summary>
-    [Authorize]
+    /// <remarks>
+    /// Используется та же политика, что и в остальных защищённых методах,
+    /// поэтому токен без утверждения <c>is_active</c> или с <c>is_active=false</c> отклоняется.
+    /// </remarks>
+    [Authorize(Policy = AppPolicies.ActiveUser)]
     [HttpGet("me")]
     public IActionResult Me()
     {

@@ -1,4 +1,5 @@
 using ApexApp.Api.Authorization;
+using ApexApp.Api.Diagnostics;
 using ApexApp.Api.Swagger;
 using ApexApp.Infrastructure.Auth;
 using ApexApp.Infrastructure.Data;
@@ -14,7 +15,14 @@ using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Локальная диагностика производительности: включается только в Development
+// и только при Diagnostics:Timing:Enabled=true (по умолчанию false).
+var requestTimingEnabled = builder.Environment.IsRequestTimingEnabled(builder.Configuration);
+var includeSqlInTimings = requestTimingEnabled &&
+    builder.Configuration.GetValue<bool>($"{DiagnosticsOptions.SectionName}:IncludeSql");
+
 builder.Services.AddDbContext<AppDbContext>(options =>
+{
     options.UseNpgsql(
         builder.Configuration.GetConnectionString("DefaultConnection"),
         npgsql =>
@@ -24,7 +32,15 @@ builder.Services.AddDbContext<AppDbContext>(options =>
             npgsql.MapEnum<OrderStatus>("order_status");
             npgsql.MapEnum<TicketStatus>("ticket_status");
             npgsql.MapEnum<QuestStepCompletionType>("quest_step_completion_type");
-        }));
+        });
+
+    if (requestTimingEnabled)
+    {
+        options.AddInterceptors(new SqlTimingInterceptor(includeSqlInTimings));
+    }
+});
+
+builder.Services.AddRequestTimingDiagnostics(builder.Configuration);
 
 var connectionString =
     builder.Configuration.GetConnectionString("DefaultConnection");
@@ -189,7 +205,7 @@ var app = builder.Build();
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
-    
+    app.UseRequestTimingDiagnostics();
 }
 
 app.UseSwagger();
