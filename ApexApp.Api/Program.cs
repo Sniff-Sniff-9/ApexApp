@@ -79,6 +79,7 @@ builder.Services.AddScoped<IActivityRewardService, ActivityRewardService>();
 builder.Services.AddScoped<IQuestService, QuestService>();
 builder.Services.AddScoped<IEventService, EventService>();
 builder.Services.AddScoped<ISurveyService, SurveyService>();
+builder.Services.AddScoped<ISupportTicketService, SupportTicketService>();
 
 builder.Services
     .AddControllers()
@@ -197,6 +198,13 @@ builder.Services.AddAuthorization(options =>
         policy.RequireAuthenticatedUser();
         policy.AddRequirements(new ActiveUserRequirement());
         policy.AddRequirements(new AnyRoleRequirement(RoleCodes.Manager, RoleCodes.Admin, RoleCodes.SuperAdmin));
+    });
+
+    options.AddPolicy(AppPolicies.ManageSupport, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(new ActiveUserRequirement());
+        policy.AddRequirements(new AnyRoleRequirement(RoleCodes.Admin, RoleCodes.SuperAdmin));
     });
 });
 

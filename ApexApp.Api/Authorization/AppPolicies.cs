@@ -10,4 +10,5 @@ public static class AppPolicies
     public const string ViewAllTransactions = "ViewAllTransactions";
     public const string ManageActivities = "ManageActivities";
     public const string ModerateActivities = "ModerateActivities";
+    public const string ManageSupport = "ManageSupport";
 }
