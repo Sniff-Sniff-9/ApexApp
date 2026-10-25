@@ -9,6 +9,9 @@ public sealed class TransactionRepository(AppDbContext dbContext) : ITransaction
     public Task<Transaction?> GetByIdAsync(long id, CancellationToken cancellationToken = default) =>
         dbContext.Transactions.SingleOrDefaultAsync(transaction => transaction.Id == id, cancellationToken);
 
+    public Task<List<Transaction>> GetAllAsync(CancellationToken cancellationToken = default) =>
+        dbContext.Transactions.ToListAsync(cancellationToken);
+
     public async Task<IReadOnlyList<Transaction>> GetByUserIdAsync(
         Guid userId,
         int skip = 0,

@@ -246,6 +246,16 @@ public sealed class OrderService : IOrderService
             .FirstOrDefaultAsync(cancellationToken);
     }
 
+    public Task<List<Order>> GetAllAsync(
+        CancellationToken cancellationToken = default)
+    {
+        return _dbContext.Set<Order>()
+            .AsNoTracking()
+            .Include(o => o.OrderItems)
+                .ThenInclude(i => i.Product)
+            .ToListAsync(cancellationToken);     
+    }
+
     public async Task<(
     bool Success,
     int StatusCode,

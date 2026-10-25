@@ -143,6 +143,30 @@ public sealed class BalancesController : ApiControllerBase
         return Ok(transactions.Select(TransactionResponse.From).ToList());
     }
 
+
+    /// <summary>
+    /// Получить все транзакции пользователей.
+    /// </summary>
+    /// <remarks>
+    [Authorize(Policy = AppPolicies.AdjustBalances)]
+    [HttpGet("transactions/all")]
+    [ProducesResponseType(typeof(IReadOnlyList<TransactionAllResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<IReadOnlyList<TransactionAllResponse>>> GetAllTransactions( 
+        CancellationToken cancellationToken = default)
+    {
+        var userId = User.GetUserId();
+        if (userId is null)
+        {
+            return Unauthorized();
+        }
+
+        var transactions = await _transactionRepository.GetAllAsync(cancellationToken);
+
+        return Ok(transactions.Select(TransactionAllResponse.From).ToList());
+    }
+
     /// <summary>
     /// Изменение баланса пользователя администратором.
     /// </summary>
@@ -224,6 +248,30 @@ public sealed record TransactionResponse(
     public static TransactionResponse From(Transaction transaction) =>
         new(
             transaction.Id,
+            transaction.Amount,
+            transaction.BalanceAfter,
+            transaction.Description,
+            transaction.RelatedUserId,
+            transaction.RelatedEntityType,
+            transaction.RelatedEntityId,
+            transaction.CreatedAt);
+}
+
+public sealed record TransactionAllResponse(
+    long Id,
+    Guid? UserId,
+    long Amount,
+    long BalanceAfter,
+    string? Description,
+    Guid? RelatedUserId,
+    string? RelatedEntityType,
+    long? RelatedEntityId,
+    DateTime CreatedAt)
+{
+    public static TransactionAllResponse From(Transaction transaction) =>
+        new(
+            transaction.Id,
+            transaction.UserId,
             transaction.Amount,
             transaction.BalanceAfter,
             transaction.Description,

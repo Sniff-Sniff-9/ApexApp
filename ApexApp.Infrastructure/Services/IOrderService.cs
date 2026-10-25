@@ -18,6 +18,9 @@ public interface IOrderService
         long orderId,
         CancellationToken cancellationToken = default);
 
+    Task<List<Order>> GetAllAsync(
+        CancellationToken cancellationToken = default);
+
     Task<(bool Success, int StatusCode, string? Error, Order? Data)>
     UpdateStatusAsync(
         long orderId,

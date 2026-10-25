@@ -97,7 +97,7 @@ public sealed class OrdersController : ApiControllerBase
     /// <response code="200">Список заказов успешно получен.</response>
     /// <response code="401">Пользователь не авторизован.</response>
     /// <response code="403">Недостаточно прав.</response>
-    [HttpGet]
+    [HttpGet("history")]
     public async Task<IActionResult> GetHistory(
         CancellationToken cancellationToken)
     {
@@ -159,6 +159,46 @@ public sealed class OrdersController : ApiControllerBase
                 i.PriceAtPurchase
             })
         };
+    }
+
+    private static object ToResponseAll(
+        ApexApp.Domain.Entities.Order order)
+    {
+        return new
+        {
+            order.Id,
+            order.UserId,
+            order.Status,
+            order.TotalAmount,
+            order.CreatedAt,
+            order.UpdatedAt,
+            order.Comment,
+            Items = order.OrderItems.Select(i => new
+            {
+                i.Id,
+                i.ProductId,
+                ProductName = i.Product?.Name,
+                i.Quantity,
+                i.PriceAtPurchase
+            })
+        };
+    }
+
+    /// <summary>
+    /// Получить все заказы пользователей.
+    /// </summary>
+    [HttpGet("all")]
+    public async Task<IActionResult> GetAll(
+        CancellationToken cancellationToken)
+    {
+        var userId = User.GetUserId();
+
+        if (userId is null)
+            return Unauthorized();
+
+        var orders = await _orderService.GetAllAsync(cancellationToken);
+
+        return Ok(orders.Select(ToResponseAll));
     }
 
     /// <summary>
