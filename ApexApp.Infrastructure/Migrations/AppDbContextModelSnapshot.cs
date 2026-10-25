@@ -49,14 +49,16 @@ namespace ApexApp.Infrastructure.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<string>("Code")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("code");
 
                     b.Property<string>("ConditionType")
                         .IsRequired()
@@ -75,7 +77,8 @@ namespace ApexApp.Infrastructure.Migrations
                         .HasDefaultValueSql("now()");
 
                     b.Property<string>("Description")
-                        .HasColumnType("text");
+                        .HasColumnType("text")
+                        .HasColumnName("description");
 
                     b.Property<string>("IconUrl")
                         .HasMaxLength(500)
@@ -91,7 +94,8 @@ namespace ApexApp.Infrastructure.Migrations
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
 
                     b.Property<long>("RewardAmount")
                         .HasColumnType("bigint")
@@ -1252,6 +1256,12 @@ namespace ApexApp.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("middle_name");
 
+                    b.Property<bool>("MustChangePassword")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("must_change_password");
+
                     b.Property<string>("Position")
                         .IsRequired()
                         .HasColumnType("text")
@@ -1273,7 +1283,8 @@ namespace ApexApp.Infrastructure.Migrations
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 

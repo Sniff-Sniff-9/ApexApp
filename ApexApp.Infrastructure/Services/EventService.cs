@@ -4,6 +4,7 @@ using ApexApp.Infrastructure.Common;
 using ApexApp.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Logging;
 
 namespace ApexApp.Infrastructure.Services;
 
@@ -14,8 +15,15 @@ namespace ApexApp.Infrastructure.Services;
 /// </summary>
 public sealed class EventService(
     AppDbContext dbContext,
-    IActivityRewardService activityRewardService) : IEventService
+    IActivityRewardService activityRewardService,
+    IAchievementService achievementService,
+    ILogger<EventService> logger) : IEventService
 {
+    /// <summary>
+    /// Код достижения за первое подтверждённое администратором участие в мероприятии.
+    /// </summary>
+    private const string FirstActivityAchievementCode = "FIRST_ACTIVITY";
+
     private const int TitleMaxLength = 200;
 
     /// <inheritdoc />
@@ -664,8 +672,14 @@ public sealed class EventService(
 
         if (participant.Status == targetStatus)
         {
+            // Повторное подтверждение посещения не создаёт дубликат достижения:
+            // AwardAsync идемпотентен и вернёт false, если достижение уже получено.
+            var repeatAchievement = targetStatus == EventParticipantStatuses.Attended
+                ? await AwardFirstActivityAsync(participant.UserId, cancellationToken)
+                : null;
+
             return ServiceResult<EventAttendanceResult>.Ok(
-                new EventAttendanceResult(participant, true));
+                new EventAttendanceResult(participant, true, repeatAchievement));
         }
 
         try
@@ -740,14 +754,66 @@ public sealed class EventService(
             participant.Status = EventParticipantStatuses.Attended;
             participant.AttendedAt = attendedAt;
 
+            // ExecuteUpdate уже сохранил изменение, поэтому отсоединяем сущность,
+            // чтобы AwardAsync не записывал ту же строку повторно.
+            dbContext.Entry(participant).State = EntityState.Detached;
+
+            // Достижение выдаётся только после подтверждения посещения администратором.
+            var newAchievement = await AwardFirstActivityAsync(
+                participant.UserId,
+                cancellationToken);
+
             return ServiceResult<EventAttendanceResult>.Ok(
-                new EventAttendanceResult(participant, false));
+                new EventAttendanceResult(participant, false, newAchievement));
         }
         catch (Exception exception) when (DatabaseErrors.IsRetryableConflict(exception))
         {
             return ServiceResult<EventAttendanceResult>.Fail(
                 409,
                 "The attendance update conflicted with another request. Please retry.");
+        }
+    }
+
+    /// <summary>
+    /// Выдаёт достижение за первое подтверждённое участие в мероприятии.
+    /// </summary>
+    /// <remarks>
+    /// Выдача идемпотентна: <see cref="IAchievementService.AwardAsync"/> не создаёт повторную
+    /// запись, если достижение уже получено. Ошибка выдачи не отменяет подтверждённое посещение.
+    /// </remarks>
+    private async Task<Achievement?> AwardFirstActivityAsync(
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var awarded = await achievementService.AwardAsync(
+                userId,
+                FirstActivityAchievementCode,
+                BalanceType.Personal,
+                TransactionType.AchievementReward,
+                cancellationToken);
+
+            if (!awarded)
+            {
+                return null;
+            }
+
+            return await dbContext.Achievements
+                .AsNoTracking()
+                .FirstOrDefaultAsync(
+                    achievement => achievement.Code == FirstActivityAchievementCode,
+                    cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(
+                exception,
+                "Failed to award {AchievementCode} for user {UserId}",
+                FirstActivityAchievementCode,
+                userId);
+
+            return null;
         }
     }
 

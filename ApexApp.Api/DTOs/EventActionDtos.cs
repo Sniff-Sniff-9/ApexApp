@@ -49,10 +49,14 @@ namespace ApexApp.Api.DTOs
     /// <param name="Status">Текущий статус участника.</param>
     /// <param name="AttendedAt">Дата и время подтверждения посещения.</param>
     /// <param name="AlreadyInStatus">Признак того, что участник уже находился в этом статусе.</param>
+    /// <param name="NewAchievement">
+    /// Достижение за первое подтверждённое участие или <c>null</c>, если оно не выдавалось.
+    /// </param>
     public sealed record EventAttendanceResultDto(
         long EventId,
         long ParticipantId,
         string Status,
         DateTime? AttendedAt,
-        bool AlreadyInStatus);
+        bool AlreadyInStatus,
+        AchievementDto? NewAchievement = null);
 }

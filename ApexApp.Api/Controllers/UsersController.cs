@@ -222,4 +222,25 @@ public sealed class UsersController : ApiControllerBase
 
         return Ok(CurrentUserProfileDto.From(result.Value!));
     }
+
+
+    [HttpPost]
+    [Authorize(Policy = AppPolicies.ManageUsers)]
+    public async Task<IActionResult> CreateEmployee(
+    [FromBody] CreateEmployeeCommand command,
+    CancellationToken cancellationToken)
+    {
+        var result = await _userProfileService.CreateEmployeeAsync(
+            command, cancellationToken);
+
+        if (!result.IsSuccess)
+        {
+            return StatusCode(result.StatusCode, new
+            {
+                message = result.Error
+            });
+        }
+
+        return Ok(result.Value);
+    }
 }

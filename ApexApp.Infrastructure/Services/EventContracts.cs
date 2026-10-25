@@ -49,9 +49,13 @@ public sealed record EventCancellationResult(
 /// </summary>
 /// <param name="Participant">Участник мероприятия.</param>
 /// <param name="AlreadyInStatus">Признак того, что участник уже находился в запрошенном статусе.</param>
+/// <param name="NewAchievement">
+/// Достижение за первое подтверждённое участие или <c>null</c>, если оно не выдавалось.
+/// </param>
 public sealed record EventAttendanceResult(
     EventParticipant Participant,
-    bool AlreadyInStatus);
+    bool AlreadyInStatus,
+    Achievement? NewAchievement = null);
 
 /// <summary>
 /// Данные для создания мероприятия.

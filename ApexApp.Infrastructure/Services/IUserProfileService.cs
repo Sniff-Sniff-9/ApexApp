@@ -24,4 +24,8 @@ public interface IUserProfileService
         Guid targetUserId,
         AdminUpdateUserCommand command,
         CancellationToken cancellationToken);
+
+    Task<ServiceResult<CurrentUserProfile>> CreateEmployeeAsync(
+        CreateEmployeeCommand command,
+        CancellationToken cancellationToken);
 }

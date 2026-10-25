@@ -497,6 +497,10 @@ public sealed class EventsController(IEventService eventService) : ApiController
     /// <summary>
     /// Подтвердить посещение или отметить неявку участника.
     /// </summary>
+    /// <remarks>
+    /// При подтверждении посещения участнику однократно выдаётся достижение
+    /// за первое подтверждённое участие в мероприятии (<c>FIRST_ACTIVITY</c>).
+    /// </remarks>
     /// <param name="eventId">Идентификатор мероприятия.</param>
     /// <param name="participantId">Идентификатор регистрации.</param>
     /// <param name="request">Новый статус участника.</param>
@@ -544,7 +548,10 @@ public sealed class EventsController(IEventService eventService) : ApiController
             participant.Participant.Id,
             participant.Participant.Status,
             participant.Participant.AttendedAt,
-            participant.AlreadyInStatus));
+            participant.AlreadyInStatus,
+            participant.NewAchievement is null
+                ? null
+                : ToDto(participant.NewAchievement)));
     }
 
     private static EventListItemDto ToListItemDto(EventSummary summary) =>
@@ -586,6 +593,19 @@ public sealed class EventsController(IEventService eventService) : ApiController
             participant.RegisteredAt,
             participant.AttendedAt,
             participant.RewardClaimed);
+
+    private static AchievementDto ToDto(Achievement achievement) =>
+        new(
+            achievement.Id,
+            achievement.Code,
+            achievement.Name,
+            achievement.Description,
+            achievement.IconUrl,
+            achievement.RewardAmount,
+            achievement.ConditionType,
+            achievement.ConditionValue,
+            achievement.IsActive,
+            achievement.CreatedAt);
 
     private static AdminEventDto ToAdminDto(EventSummary summary) =>
         new(

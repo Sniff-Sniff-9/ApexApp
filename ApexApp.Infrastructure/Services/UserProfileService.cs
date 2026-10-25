@@ -2,6 +2,10 @@ using ApexApp.Domain.Entities;
 using ApexApp.Infrastructure.Common;
 using ApexApp.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using System.Net.Http.Json;
+using System.Text.Json;
+
 
 namespace ApexApp.Infrastructure.Services;
 
@@ -11,9 +15,17 @@ public sealed class UserProfileService : IUserProfileService
 
     private readonly AppDbContext _dbContext;
 
-    public UserProfileService(AppDbContext dbContext)
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IConfiguration _configuration;
+
+    public UserProfileService(
+        AppDbContext dbContext,
+        IHttpClientFactory httpClientFactory,
+        IConfiguration configuration)
     {
         _dbContext = dbContext;
+        _httpClientFactory = httpClientFactory;
+        _configuration = configuration;
     }
 
     public async Task<CurrentUserProfile?> GetCurrentAsync(Guid userId, CancellationToken cancellationToken)
@@ -248,5 +260,111 @@ public sealed class UserProfileService : IUserProfileService
         }
 
         return null;
+    }
+
+    public async Task<ServiceResult<CurrentUserProfile>> CreateEmployeeAsync(
+        CreateEmployeeCommand command,
+    CancellationToken cancellationToken)
+    {
+        var supabaseUrl = _configuration["Supabase:ProjectUrl"];
+        var anonKey = _configuration["Supabase:AnonKey"];
+
+        if (string.IsNullOrWhiteSpace(supabaseUrl) ||
+            string.IsNullOrWhiteSpace(anonKey))
+        {
+            return ServiceResult<CurrentUserProfile>.Fail(
+                500, "Supabase configuration is missing.");
+        }
+
+        var email = command.Email.Trim();
+        var password = command.Password;
+
+        if (string.IsNullOrWhiteSpace(email) ||
+            string.IsNullOrWhiteSpace(password) ||
+            string.IsNullOrWhiteSpace(command.FirstName) ||
+            string.IsNullOrWhiteSpace(command.LastName) ||
+            string.IsNullOrWhiteSpace(command.Department) ||
+            string.IsNullOrWhiteSpace(command.Position))
+        {
+            return ServiceResult<CurrentUserProfile>.Fail(
+                400, "Required employee fields are missing.");
+        }
+
+        var client = _httpClientFactory.CreateClient();
+        client.DefaultRequestHeaders.TryAddWithoutValidation("apikey", anonKey);
+
+        using var response = await client.PostAsJsonAsync(
+    $"{supabaseUrl.TrimEnd('/')}/auth/v1/signup",
+    new
+    {
+        email,
+        password,
+        data = new
+        {
+            first_name = command.FirstName.Trim(),
+            last_name = command.LastName.Trim(),
+            middle_name = command.MiddleName?.Trim(),
+            department = command.Department.Trim(),
+            position = command.Position.Trim()
+        }
+    },
+    cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(
+                cancellationToken);
+
+            return ServiceResult<CurrentUserProfile>.Fail(
+                (int)response.StatusCode,
+                $"Supabase error: {errorBody}");
+        }
+
+        using var document = await JsonDocument.ParseAsync(
+            await response.Content.ReadAsStreamAsync(cancellationToken),
+            cancellationToken: cancellationToken);
+
+        var root = document.RootElement;
+
+        var authUser = root.TryGetProperty("user", out var nestedUser) &&
+                       nestedUser.ValueKind == JsonValueKind.Object
+            ? nestedUser
+            : root;
+
+        if (!authUser.TryGetProperty("id", out var idElement) ||
+            !Guid.TryParse(idElement.GetString(), out var userId))
+        {
+            return ServiceResult<CurrentUserProfile>.Fail(
+                502, "Supabase did not return a valid user ID.");
+        }
+
+        var user = await _dbContext.Users
+            .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+
+        if (user is null)
+        {
+            return ServiceResult<CurrentUserProfile>.Fail(
+                500,
+                "User profile was not created by the Supabase trigger.");
+        }
+
+        user.FirstName = command.FirstName.Trim();
+        user.LastName = command.LastName.Trim();
+        user.MiddleName = string.IsNullOrWhiteSpace(command.MiddleName)
+            ? null
+            : command.MiddleName.Trim();
+        user.Department = command.Department.Trim();
+        user.Position = command.Position.Trim();
+        user.IsActive = true;
+        user.MustChangePassword = true;
+        user.UpdatedAt = DateTime.UtcNow;
+
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        var profile = await GetByIdAsync(
+            userId, includeInactive: true, cancellationToken);
+
+        return ServiceResult<CurrentUserProfile>.Ok(profile!);
     }
 }
