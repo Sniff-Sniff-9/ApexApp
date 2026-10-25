@@ -55,7 +55,7 @@ public class AuthController : ControllerBase
         return Ok(new
         {
             message = "You are authenticated!",
-            userId
+            userId         
         });
     }
 
@@ -143,12 +143,13 @@ CancellationToken cancellationToken)
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         return Ok(new LoginResponse(
-            root.GetProperty("access_token").GetString()!,
-            root.GetProperty("token_type").GetString()!,
-            root.GetProperty("expires_in").GetInt32(),
-            root.TryGetProperty("refresh_token", out var refreshToken)
-                ? refreshToken.GetString()
-                : null));
+    root.GetProperty("access_token").GetString()!,
+    root.GetProperty("token_type").GetString()!,
+    root.GetProperty("expires_in").GetInt32(),
+    root.TryGetProperty("refresh_token", out var refreshToken)
+        ? refreshToken.GetString()
+        : null,
+    user.MustChangePassword));
     }
 
     /// <summary>
@@ -229,7 +230,8 @@ CancellationToken cancellationToken)
     string AccessToken,
     string TokenType,
     int ExpiresIn,
-    string? RefreshToken);
+    string? RefreshToken,
+    bool MustChangePassword);
 
     public sealed record LoginRequest(string Email, string Password);
 

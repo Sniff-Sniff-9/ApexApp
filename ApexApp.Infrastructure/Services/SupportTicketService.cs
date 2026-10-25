@@ -106,14 +106,20 @@ public sealed class SupportTicketService(AppDbContext dbContext) : ISupportTicke
 
         var totalCount = await query.CountAsync(cancellationToken);
 
-        var items = await ProjectSummaries(query)
+        var orderedQuery = query
             .OrderByDescending(ticket => ticket.CreatedAt)
             .ThenByDescending(ticket => ticket.Id)
             .Skip((page - 1) * pageSize)
-            .Take(pageSize)
+            .Take(pageSize);
+
+        var items = await ProjectSummaries(orderedQuery)
             .ToListAsync(cancellationToken);
 
-        return new PagedResult<SupportTicketSummary>(items, totalCount, page, pageSize);
+        return new PagedResult<SupportTicketSummary>(
+            items,
+            totalCount,
+            page,
+            pageSize);
     }
 
     /// <inheritdoc />
@@ -141,14 +147,20 @@ public sealed class SupportTicketService(AppDbContext dbContext) : ISupportTicke
 
         var totalCount = await query.CountAsync(cancellationToken);
 
-        var items = await ProjectSummaries(query)
+        var orderedQuery = query
             .OrderByDescending(ticket => ticket.UpdatedAt)
             .ThenByDescending(ticket => ticket.Id)
             .Skip((page - 1) * pageSize)
-            .Take(pageSize)
+            .Take(pageSize);
+
+        var items = await ProjectSummaries(orderedQuery)
             .ToListAsync(cancellationToken);
 
-        return new PagedResult<SupportTicketSummary>(items, totalCount, page, pageSize);
+        return new PagedResult<SupportTicketSummary>(
+            items,
+            totalCount,
+            page,
+            pageSize);
     }
 
     /// <inheritdoc />
