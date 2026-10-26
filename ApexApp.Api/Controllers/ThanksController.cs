@@ -217,7 +217,6 @@ public sealed class ThanksController : ApiControllerBase
 
         return StatusCode(StatusCodes.Status201Created, new
         {
-            message = "Manager bonus awarded successfully.",
             recipientId = request.ToUserId,
             request.Amount,
             request.Message
