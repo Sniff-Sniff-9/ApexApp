@@ -37,12 +37,15 @@ public sealed class BalanceService(
             return ServiceResult<Balance>.Fail(404, "User was not found.");
         }
 
-        var relatedUserExists = await dbContext.Users
-    .AnyAsync(u => u.Id == relatedUserId, cancellationToken);
-
-        if (!relatedUserExists)
+        if (relatedUserId.HasValue)
         {
-            return ServiceResult<Balance>.Fail(404, "Related user was not found.");
+            var relatedUserExists = await dbContext.Users
+        .AnyAsync(u => u.Id == relatedUserId.Value, cancellationToken);
+
+            if (!relatedUserExists)
+            {
+                return ServiceResult<Balance>.Fail(404, "Related user was not found.");
+            }
         }
 
         if (amount == 0)
