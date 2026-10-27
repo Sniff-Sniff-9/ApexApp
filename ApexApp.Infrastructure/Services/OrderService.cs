@@ -270,6 +270,7 @@ public sealed class OrderService : IOrderService
             return (false, 400, "Invalid order or employee ID.", null);
 
         if (newStatus is not (
+            OrderStatus.Paid or
             OrderStatus.Processing or
             OrderStatus.Ready or
             OrderStatus.Delivered))
@@ -321,5 +322,131 @@ public sealed class OrderService : IOrderService
         await transaction.CommitAsync(cancellationToken);
 
         return (true, 200, null, order);
+    }
+
+    public async Task<(bool Success, int StatusCode, string? Error, Order? Data)>
+    CancelAsync(
+        long orderId,
+        Guid employeeId,
+        CancellationToken cancellationToken = default)
+    {
+        if (orderId <= 0 || employeeId == Guid.Empty)
+            return (false, 400, "Invalid order or employee ID.", null);
+
+        await using var transaction =
+            await _dbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+
+        try
+        {
+            var order = await _dbContext.Set<Order>()
+                .Include(o => o.OrderItems)
+                    .ThenInclude(i => i.Product)
+                .FirstOrDefaultAsync(
+                    o => o.Id == orderId,
+                    cancellationToken);
+
+            if (order is null)
+                return (false, 404, "Order was not found.", null);
+
+            // Отменяем только оплаченные заказы, которые ещё не начали обрабатывать.
+            if (order.Status != OrderStatus.Paid)
+            {
+                return (
+                    false,
+                    409,
+                    $"Cannot cancel order with status {order.Status}. Only paid orders can be cancelled.",
+                    null);
+            }
+
+            var balance = await _dbContext.Balances
+                .FromSqlInterpolated($"""
+                SELECT *
+                FROM public.balances
+                WHERE user_id = {order.UserId}
+                  AND type = 'personal'::balance_type
+                FOR UPDATE
+                """)
+                .SingleOrDefaultAsync(cancellationToken);
+
+            if (balance is null)
+                return (false, 409, "Personal balance was not found.", null);
+
+            long newBalance;
+
+            try
+            {
+                newBalance = checked(balance.Amount + order.TotalAmount);
+                balance.Version = checked(balance.Version + 1);
+            }
+            catch (OverflowException)
+            {
+                return (false, 400, "Balance exceeds the supported range.", null);
+            }
+
+            var now = DateTime.UtcNow;
+
+            balance.Amount = newBalance;
+            balance.UpdatedAt = now;
+
+            foreach (var item in order.OrderItems)
+            {
+                if (item.Product is null)
+                    continue;
+
+                if (item.Product.Stock.HasValue)
+                {
+                    try
+                    {
+                        item.Product.Stock = checked(
+                            item.Product.Stock.Value + item.Quantity);
+                    }
+                    catch (OverflowException)
+                    {
+                        return (
+                            false,
+                            400,
+                            $"Stock exceeds the supported range for '{item.Product.Name}'.",
+                            null);
+                    }
+                }
+
+                item.Product.UpdatedAt = now;
+            }
+
+            order.Status = OrderStatus.Cancelled;
+            order.UpdatedAt = now;
+
+            _dbContext.Set<Transaction>().Add(new Transaction
+            {
+                UserId = order.UserId,
+                Type = TransactionType.Refund,
+                Amount = order.TotalAmount,
+                BalanceAfter = newBalance,
+                Description = $"Возврат средств за отмененный заказ от {order.CreatedAt}",
+                CreatedBy = employeeId,
+                RelatedEntityType = "order",
+                RelatedEntityId = order.Id,
+                CreatedAt = now
+            });
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            return (true, 200, null, order);
+        }
+        catch (PostgresException ex)
+            when (ex.SqlState == PostgresErrorCodes.SerializationFailure ||
+                  ex.SqlState == PostgresErrorCodes.DeadlockDetected)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+
+            return (
+                false,
+                409,
+                "A concurrent operation changed the data. Please retry.",
+                null);
+        }
     }
 }

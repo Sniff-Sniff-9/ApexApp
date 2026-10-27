@@ -27,4 +27,9 @@ public interface IOrderService
         Guid employeeId,
         OrderStatus newStatus,
         CancellationToken cancellationToken = default);
+
+    Task<(bool Success, int StatusCode, string? Error, Order? Data)> CancelAsync(
+       long orderId,
+       Guid employeeId,
+       CancellationToken cancellationToken = default);
 }

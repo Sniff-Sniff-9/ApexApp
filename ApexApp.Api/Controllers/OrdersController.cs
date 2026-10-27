@@ -258,4 +258,60 @@ public sealed class OrdersController : ApiControllerBase
             order.UpdatedAt
         });
     }
+
+    /// <summary>
+    /// Отменить заказ и вернуть средства на личный баланс пользователя.
+    /// </summary>
+    /// <param name="id">Идентификатор заказа.</param>
+    /// <param name="cancellationToken">Токен отмены операции.</param>
+    /// <returns>Информация об отменённом заказе.</returns>
+    /// <response code="200">Заказ успешно отменён, средства возвращены.</response>
+    /// <response code="400">Некорректный идентификатор заказа.</response>
+    /// <response code="401">Пользователь не авторизован.</response>
+    /// <response code="403">Недостаточно прав.</response>
+    /// <response code="404">Заказ не найден.</response>
+    /// <response code="409">Заказ нельзя отменить или возник конфликт ресурсов.</response>
+    [HttpPatch("{id:long}/cancel")]
+    [Authorize(Policy = AppPolicies.ManageOrders)]
+    public async Task<IActionResult> Cancel(
+        long id,
+        CancellationToken cancellationToken)
+    {
+        if (id <= 0)
+        {
+            return BadRequest(new
+            {
+                message = "Invalid order ID."
+            });
+        }
+
+        var employeeId = User.GetUserId();
+
+        if (employeeId is null)
+            return Unauthorized();
+
+        var result = await _orderService.CancelAsync(
+            id,
+            employeeId.Value,
+            cancellationToken);
+
+        if (!result.Success)
+        {
+            return StatusCode(
+                result.StatusCode,
+                new { message = result.Error });
+        }
+
+        var order = result.Data!;
+
+        return Ok(new
+        {
+            order.Id,
+            order.UserId,
+            order.Status,
+            order.TotalAmount,
+            order.UpdatedAt,
+            Message = "Order cancelled and funds refunded successfully."
+        });
+    }
 }
