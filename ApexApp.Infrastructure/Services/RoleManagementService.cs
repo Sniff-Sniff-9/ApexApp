@@ -1,4 +1,5 @@
-using ApexApp.Domain.Entities;
+﻿using ApexApp.Domain.Entities;
+using ApexApp.Infrastructure.Caching;
 using ApexApp.Infrastructure.Common;
 using ApexApp.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -9,16 +10,27 @@ public sealed class RoleManagementService : IRoleManagementService
 {
     private readonly AppDbContext _dbContext;
     private readonly IUserProfileService _userProfileService;
+    private readonly ICacheService _cache;
 
-    public RoleManagementService(AppDbContext dbContext, IUserProfileService userProfileService)
+    public RoleManagementService(
+        AppDbContext dbContext,
+        IUserProfileService userProfileService,
+        ICacheService cache)
     {
         _dbContext = dbContext;
         _userProfileService = userProfileService;
+        _cache = cache;
     }
 
     public async Task<IReadOnlyList<RoleInfo>> ListRolesAsync(CancellationToken cancellationToken)
     {
-        return await _dbContext.Roles
+        if (_cache.TryGet<IReadOnlyList<RoleInfo>>(CacheKeys.Roles, out var cached) &&
+            cached is not null)
+        {
+            return cached;
+        }
+
+        var roles = await _dbContext.Roles
             .AsNoTracking()
             .OrderBy(role => role.Code)
             .Select(role => new RoleInfo
@@ -29,6 +41,10 @@ public sealed class RoleManagementService : IRoleManagementService
                 Description = role.Description
             })
             .ToListAsync(cancellationToken);
+
+        _cache.Set<IReadOnlyList<RoleInfo>>(CacheKeys.Roles, roles, CacheKeys.RolesTtl);
+
+        return roles;
     }
 
     public async Task<ServiceResult<CurrentUserProfile>> SetUserRolesAsync(
@@ -86,6 +102,9 @@ public sealed class RoleManagementService : IRoleManagementService
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+
+        // Cached user directory entries embed role codes.
+        _cache.RemoveByPrefix(CacheKeys.UsersPrefix);
 
         var profile = await _userProfileService.GetCurrentAsync(targetUserId, cancellationToken);
         return ServiceResult<CurrentUserProfile>.Ok(profile!);

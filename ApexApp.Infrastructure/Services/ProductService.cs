@@ -1,32 +1,60 @@
 ﻿using ApexApp.Domain.Entities;
+using ApexApp.Infrastructure.Caching;
 using ApexApp.Infrastructure.Repositories;
 
 namespace ApexApp.Infrastructure.Services;
 
 public sealed class ProductService(
-    ProductRepository repository) : IProductService
+    ProductRepository repository,
+    ICacheService cache) : IProductService
 {
-    public Task<List<Product>> GetActiveAsync(
+    public async Task<List<Product>> GetActiveAsync(
         int? categoryId = null,
         CancellationToken cancellationToken = default)
     {
-        return repository.GetActiveAsync(
+        var cacheKey = CacheKeys.Products(categoryId);
+
+        if (cache.TryGet<List<Product>>(cacheKey, out var cached) && cached is not null)
+        {
+            return cached;
+        }
+
+        var products = await repository.GetActiveAsync(
             categoryId, cancellationToken);
+
+        cache.Set(cacheKey, products, CacheKeys.ProductsTtl);
+
+        return products;
     }
 
-    public Task<Product?> GetActiveByIdAsync(
+    public async Task<Product?> GetActiveByIdAsync(
         int id,
         CancellationToken cancellationToken = default)
     {
         if (id <= 0)
-            return Task.FromResult<Product?>(null);
+            return null;
 
-        return repository.GetActiveByIdAsync(
+        var cacheKey = CacheKeys.Product(id);
+
+        if (cache.TryGet<Product>(cacheKey, out var cached) && cached is not null)
+        {
+            return cached;
+        }
+
+        var product = await repository.GetActiveByIdAsync(
             id, cancellationToken);
+
+        if (product is not null)
+        {
+            cache.Set(cacheKey, product, CacheKeys.ProductsTtl);
+        }
+
+        return product;
     }
+
     public async Task<(bool Success, string? Error, Product? Data)> CreateAsync(
-    Product product,
-    CancellationToken cancellationToken = default)
+        Product product,
+        CancellationToken cancellationToken = default)
     {
         var error = await ValidateProductAsync(product, cancellationToken);
 
@@ -41,6 +69,8 @@ public sealed class ProductService(
 
         await repository.AddAsync(product, cancellationToken);
         await repository.SaveChangesAsync(cancellationToken);
+
+        cache.RemoveByPrefix(CacheKeys.ProductsPrefix);
 
         return (true, null, product);
     }
@@ -75,6 +105,8 @@ public sealed class ProductService(
 
         await repository.SaveChangesAsync(cancellationToken);
 
+        cache.RemoveByPrefix(CacheKeys.ProductsPrefix);
+
         return (true, null, product);
     }
 
@@ -95,6 +127,8 @@ public sealed class ProductService(
         product.UpdatedAt = DateTime.UtcNow;
 
         await repository.SaveChangesAsync(cancellationToken);
+
+        cache.RemoveByPrefix(CacheKeys.ProductsPrefix);
 
         return (true, null);
     }
@@ -126,5 +160,4 @@ public sealed class ProductService(
 
         return null;
     }
-
 }

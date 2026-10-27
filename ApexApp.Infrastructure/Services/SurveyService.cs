@@ -1,6 +1,7 @@
-using System.Data;
+﻿using System.Data;
 using System.Text.Json;
 using ApexApp.Domain.Entities;
+using ApexApp.Infrastructure.Caching;
 using ApexApp.Infrastructure.Common;
 using ApexApp.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -15,14 +16,19 @@ public sealed class SurveyService : ISurveyService
 {
     private readonly AppDbContext dbContext;
     private readonly ActivityRewardGranter activityRewardGranter;
+    private readonly ICacheService cache;
 
     private const int TitleMaxLength = 200;
     private const int TextAnswerMaxLength = 4000;
 
-    public SurveyService(AppDbContext dbContext, ActivityRewardGranter activityRewardGranter)
+    public SurveyService(
+        AppDbContext dbContext,
+        ActivityRewardGranter activityRewardGranter,
+        ICacheService cache)
     {
         this.dbContext = dbContext;
         this.activityRewardGranter = activityRewardGranter;
+        this.cache = cache;
     }
 
     /// <inheritdoc />
@@ -332,6 +338,8 @@ public sealed class SurveyService : ISurveyService
             }
 
             await databaseTransaction.CommitAsync(cancellationToken);
+
+            cache.Remove(CacheKeys.SurveyResults(surveyId));
         }
         catch (DbUpdateException exception) when (DatabaseErrors.IsUniqueViolation(exception))
         {
@@ -513,6 +521,8 @@ public sealed class SurveyService : ISurveyService
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
+        cache.Remove(CacheKeys.SurveyResults(surveyId));
+
         return ServiceResult<Survey>.Ok(survey);
     }
 
@@ -541,6 +551,8 @@ public sealed class SurveyService : ISurveyService
             survey.UpdatedAt = DateTime.UtcNow;
 
             await dbContext.SaveChangesAsync(cancellationToken);
+
+            cache.Remove(CacheKeys.SurveyResults(surveyId));
         }
 
         return ServiceResult<Survey>.Ok(survey);
@@ -592,6 +604,8 @@ public sealed class SurveyService : ISurveyService
         dbContext.SurveyQuestions.Add(question);
 
         await dbContext.SaveChangesAsync(cancellationToken);
+
+        cache.Remove(CacheKeys.SurveyResults(surveyId));
 
         return ServiceResult<SurveyQuestion>.Ok(question);
     }
@@ -672,6 +686,8 @@ public sealed class SurveyService : ISurveyService
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
+        cache.Remove(CacheKeys.SurveyResults(surveyId));
+
         return ServiceResult<SurveyQuestion>.Ok(question);
     }
 
@@ -733,6 +749,8 @@ public sealed class SurveyService : ISurveyService
                 "The question is referenced by other records and cannot be deleted.");
         }
 
+        cache.Remove(CacheKeys.SurveyResults(surveyId));
+
         return ServiceResult<SurveyQuestion>.Ok(question);
     }
 
@@ -744,6 +762,14 @@ public sealed class SurveyService : ISurveyService
         if (surveyId <= 0)
         {
             return ServiceResult<SurveyResultsResult>.Fail(400, "A valid survey ID is required.");
+        }
+
+        var cacheKey = CacheKeys.SurveyResults(surveyId);
+
+        if (cache.TryGet<SurveyResultsResult>(cacheKey, out var cached) &&
+            cached is not null)
+        {
+            return ServiceResult<SurveyResultsResult>.Ok(cached);
         }
 
         var survey = await dbContext.Surveys
@@ -864,8 +890,11 @@ public sealed class SurveyService : ISurveyService
                 numericCount > 0 ? decimal.Round(sum / numericCount, 2) : null));
         }
 
-        return ServiceResult<SurveyResultsResult>.Ok(
-            new SurveyResultsResult(survey, responseCount, questions));
+        var results = new SurveyResultsResult(survey, responseCount, questions);
+
+        cache.Set(cacheKey, results, CacheKeys.SurveyResultsTtl);
+
+        return ServiceResult<SurveyResultsResult>.Ok(results);
     }
 
     /// <summary>

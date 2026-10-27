@@ -1,4 +1,5 @@
 ﻿using ApexApp.Domain.Entities;
+using ApexApp.Infrastructure.Caching;
 using ApexApp.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -12,12 +13,18 @@ public sealed class OrderService : IOrderService
     private readonly AppDbContext _dbContext;
     private readonly IAchievementService _achievementService;
     private readonly ILogger<OrderService> _logger;
+    private readonly ICacheService _cache;
 
-    public OrderService(AppDbContext dbContext, IAchievementService achievementService, ILogger<OrderService> logger)
+    public OrderService(
+        AppDbContext dbContext,
+        IAchievementService achievementService,
+        ILogger<OrderService> logger,
+        ICacheService cache)
     {
         _dbContext = dbContext;
         _achievementService = achievementService;
         _logger = logger;
+        _cache = cache;
     }
 
     public async Task<(bool Success, int StatusCode, string? Error, Order? Data, Achievement? NewAchievement)>
@@ -173,6 +180,9 @@ public sealed class OrderService : IOrderService
 
             await _dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
+
+            // Checkout decrements product stock, which is part of the cached catalog.
+            _cache.RemoveByPrefix(CacheKeys.ProductsPrefix);
 
             Achievement? newAchievement = null;
 

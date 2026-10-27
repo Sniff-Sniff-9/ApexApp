@@ -1,4 +1,5 @@
 ﻿using ApexApp.Domain.Entities;
+using ApexApp.Infrastructure.Caching;
 using ApexApp.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -11,12 +12,18 @@ public sealed class ThankService : IThankService
     private readonly AppDbContext dbContext;
     private readonly IAchievementService _achievementService;
     private readonly ILogger<ThankService> _logger;
+    private readonly ICacheService _cache;
 
-    public ThankService(AppDbContext dbContext, IAchievementService achievementService, ILogger<ThankService> logger)
+    public ThankService(
+        AppDbContext dbContext,
+        IAchievementService achievementService,
+        ILogger<ThankService> logger,
+        ICacheService cache)
     {
         this.dbContext = dbContext;
         _achievementService = achievementService;
         _logger = logger;
+        _cache = cache;
     }
 
     public async Task<ThanksResult> CreateAsync(
@@ -135,6 +142,9 @@ public sealed class ThankService : IThankService
 
         await dbContext.SaveChangesAsync(cancellationToken);
         await dbTransaction.CommitAsync(cancellationToken);
+
+        // The leaderboard aggregates the number of thanks received.
+        _cache.RemoveByPrefix(CacheKeys.LeaderboardPrefix);
 
         Achievement? newAchievement = null;
 

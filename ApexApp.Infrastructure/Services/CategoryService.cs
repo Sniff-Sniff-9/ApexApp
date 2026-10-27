@@ -1,14 +1,27 @@
 ﻿using ApexApp.Domain.Entities;
+using ApexApp.Infrastructure.Caching;
 using ApexApp.Infrastructure.Repositories;
 
 namespace ApexApp.Infrastructure.Services;
 
-public sealed class CategoryService(CategoryRepository repository) : ICategoryService
+public sealed class CategoryService(
+    CategoryRepository repository,
+    ICacheService cache) : ICategoryService
 {
-    public Task<List<Category>> GetAllAsync(
+    public async Task<List<Category>> GetAllAsync(
         CancellationToken cancellationToken = default)
     {
-        return repository.GetAllAsync(cancellationToken);
+        if (cache.TryGet<List<Category>>(CacheKeys.Categories, out var cached) &&
+            cached is not null)
+        {
+            return cached;
+        }
+
+        var categories = await repository.GetAllAsync(cancellationToken);
+
+        cache.Set(CacheKeys.Categories, categories, CacheKeys.CategoriesTtl);
+
+        return categories;
     }
 
     public Task<Category?> GetByIdAsync(
@@ -22,9 +35,9 @@ public sealed class CategoryService(CategoryRepository repository) : ICategorySe
     }
 
     public async Task<(bool Success, string? Error, Category? Data)> CreateAsync(
-    string name,
-    int sortOrder,
-    CancellationToken cancellationToken = default)
+        string name,
+        int sortOrder,
+        CancellationToken cancellationToken = default)
     {
         name = name.Trim();
 
@@ -39,6 +52,8 @@ public sealed class CategoryService(CategoryRepository repository) : ICategorySe
 
         await repository.AddAsync(category, cancellationToken);
         await repository.SaveChangesAsync(cancellationToken);
+
+        cache.Remove(CacheKeys.Categories);
 
         return (true, null, category);
     }
@@ -67,6 +82,8 @@ public sealed class CategoryService(CategoryRepository repository) : ICategorySe
 
         await repository.SaveChangesAsync(cancellationToken);
 
+        cache.Remove(CacheKeys.Categories);
+
         return (true, null, category);
     }
 
@@ -87,6 +104,8 @@ public sealed class CategoryService(CategoryRepository repository) : ICategorySe
 
         repository.Remove(category);
         await repository.SaveChangesAsync(cancellationToken);
+
+        cache.Remove(CacheKeys.Categories);
 
         return (true, null);
     }

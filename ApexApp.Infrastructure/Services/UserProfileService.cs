@@ -1,4 +1,5 @@
-using ApexApp.Domain.Entities;
+﻿using ApexApp.Domain.Entities;
+using ApexApp.Infrastructure.Caching;
 using ApexApp.Infrastructure.Common;
 using ApexApp.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -17,15 +18,18 @@ public sealed class UserProfileService : IUserProfileService
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _configuration;
+    private readonly ICacheService _cache;
 
     public UserProfileService(
         AppDbContext dbContext,
         IHttpClientFactory httpClientFactory,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        ICacheService cache)
     {
         _dbContext = dbContext;
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
+        _cache = cache;
     }
 
     public async Task<CurrentUserProfile?> GetCurrentAsync(Guid userId, CancellationToken cancellationToken)
@@ -48,6 +52,15 @@ public sealed class UserProfileService : IUserProfileService
             return null;
         }
 
+        // Keyed by department name: the payload does not depend on the caller.
+        var cacheKey = CacheKeys.DepartmentUsers(manager.Department);
+
+        if (_cache.TryGet<IReadOnlyList<CurrentUserProfile>>(cacheKey, out var cached) &&
+            cached is not null)
+        {
+            return cached;
+        }
+
         var users = await _dbContext.Users
             .AsNoTracking()
             .Where(user => user.Department == manager.Department)
@@ -58,15 +71,28 @@ public sealed class UserProfileService : IUserProfileService
         var userIds = users.Select(user => user.Id).ToList();
         var rolesByUser = await LoadRolesAsync(userIds, cancellationToken);
 
-        return users
+        IReadOnlyList<CurrentUserProfile> department = users
             .Select(user => Map(user, rolesByUser.GetValueOrDefault(user.Id, [])))
             .ToList();
+
+        _cache.Set(cacheKey, department, CacheKeys.UsersTtl);
+
+        return department;
     }
 
     public async Task<IReadOnlyList<CurrentUserProfile>> ListAsync(
         bool includeInactive,
         CancellationToken cancellationToken)
     {
+        // The payload depends on includeInactive, so the variant is part of the key.
+        var cacheKey = CacheKeys.UsersList(includeInactive);
+
+        if (_cache.TryGet<IReadOnlyList<CurrentUserProfile>>(cacheKey, out var cached) &&
+            cached is not null)
+        {
+            return cached;
+        }
+
         var query = _dbContext.Users.AsNoTracking();
         if (!includeInactive)
         {
@@ -81,9 +107,13 @@ public sealed class UserProfileService : IUserProfileService
         var userIds = users.Select(user => user.Id).ToList();
         var rolesByUser = await LoadRolesAsync(userIds, cancellationToken);
 
-        return users
+        IReadOnlyList<CurrentUserProfile> profiles = users
             .Select(user => Map(user, rolesByUser.GetValueOrDefault(user.Id, [])))
             .ToList();
+
+        _cache.Set(cacheKey, profiles, CacheKeys.UsersTtl);
+
+        return profiles;
     }
 
     public async Task<CurrentUserProfile?> GetByIdAsync(
@@ -134,6 +164,8 @@ public sealed class UserProfileService : IUserProfileService
         user.UpdatedAt = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync(cancellationToken);
 
+        _cache.RemoveByPrefix(CacheKeys.UsersPrefix);
+
         var profile = await GetCurrentAsync(userId, cancellationToken);
         return ServiceResult<CurrentUserProfile>.Ok(profile!);
     }
@@ -157,6 +189,8 @@ public sealed class UserProfileService : IUserProfileService
 
         user.UpdatedAt = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _cache.RemoveByPrefix(CacheKeys.UsersPrefix);
 
         var profile = await GetCurrentAsync(targetUserId, cancellationToken);
         return ServiceResult<CurrentUserProfile>.Ok(profile!);
@@ -391,6 +425,8 @@ public sealed class UserProfileService : IUserProfileService
 
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _cache.RemoveByPrefix(CacheKeys.UsersPrefix);
 
         var profile = await GetByIdAsync(
             userId, includeInactive: true, cancellationToken);

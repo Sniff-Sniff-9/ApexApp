@@ -1,17 +1,27 @@
 ﻿using ApexApp.Domain.Entities;
+using ApexApp.Infrastructure.Caching;
 using ApexApp.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
 namespace ApexApp.Infrastructure.Services;
 
 public sealed class LeaderboardService(
-    AppDbContext dbContext) : ILeaderboardService
+    AppDbContext dbContext,
+    ICacheService cache) : ILeaderboardService
 {
     public async Task<IReadOnlyList<LeaderboardEntryDto>> GetAsync(
         int days,
         int limit,
         CancellationToken cancellationToken = default)
     {
+        var cacheKey = CacheKeys.Leaderboard(days, limit);
+
+        if (cache.TryGet<IReadOnlyList<LeaderboardEntryDto>>(cacheKey, out var cached) &&
+            cached is not null)
+        {
+            return cached;
+        }
+
         var startDate = DateTime.UtcNow.AddDays(-days);
 
         var users = await dbContext.Users
@@ -37,7 +47,7 @@ public sealed class LeaderboardService(
             .Take(limit)
             .ToListAsync(cancellationToken);
 
-        return users
+        IReadOnlyList<LeaderboardEntryDto> leaderboard = users
             .Select((u, index) => new LeaderboardEntryDto(
                 Rank: index + 1,
                 UserId: u.Id,
@@ -47,5 +57,9 @@ public sealed class LeaderboardService(
                 Avatar: u.AvatarUrl,
                 ThanksCount: u.ThanksCount))
             .ToList();
+
+        cache.Set(cacheKey, leaderboard, CacheKeys.LeaderboardTtl);
+
+        return leaderboard;
     }
 }

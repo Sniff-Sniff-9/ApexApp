@@ -1,20 +1,34 @@
 ﻿using System.Data;
 using ApexApp.Domain.Entities;
+using ApexApp.Infrastructure.Caching;
 using ApexApp.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
 namespace ApexApp.Infrastructure.Services;
 
-public sealed class AchievementService(AppDbContext dbContext)
-    : IAchievementService
+public sealed class AchievementService(
+    AppDbContext dbContext,
+    ICacheService cache) : IAchievementService
 {
     public async Task<IReadOnlyList<Achievement>> GetAllAsync(
         CancellationToken cancellationToken = default)
     {
-        return await dbContext.Achievements
+        if (cache.TryGet<IReadOnlyList<Achievement>>(
+                CacheKeys.Achievements, out var cached) &&
+            cached is not null)
+        {
+            return cached;
+        }
+
+        var achievements = await dbContext.Achievements
             .AsNoTracking()
             .OrderBy(a => a.Id)
             .ToListAsync(cancellationToken);
+
+        cache.Set<IReadOnlyList<Achievement>>(
+            CacheKeys.Achievements, achievements, CacheKeys.AchievementsTtl);
+
+        return achievements;
     }
 
     public async Task<Achievement?> GetByIdAsync(
@@ -35,6 +49,8 @@ public sealed class AchievementService(AppDbContext dbContext)
 
         dbContext.Achievements.Add(achievement);
         await dbContext.SaveChangesAsync(cancellationToken);
+
+        cache.Remove(CacheKeys.Achievements);
 
         return achievement;
     }
@@ -58,6 +74,9 @@ public sealed class AchievementService(AppDbContext dbContext)
         achievement.IsActive = isActive;
 
         await dbContext.SaveChangesAsync(cancellationToken);
+
+        cache.Remove(CacheKeys.Achievements);
+
         return true;
     }
 
@@ -80,6 +99,8 @@ public sealed class AchievementService(AppDbContext dbContext)
 
         dbContext.Achievements.Remove(achievement);
         await dbContext.SaveChangesAsync(cancellationToken);
+
+        cache.Remove(CacheKeys.Achievements);
 
         return true;
     }

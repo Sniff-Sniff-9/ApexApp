@@ -1,5 +1,6 @@
 ﻿using ApexApp.Api.Authorization;
 using ApexApp.Api.Extensions;
+using ApexApp.Infrastructure.Caching;
 using ApexApp.Infrastructure.Common;
 using ApexApp.Infrastructure.Data;
 using ApexApp.Infrastructure.Services;
@@ -26,15 +27,18 @@ public class AuthController : ControllerBase
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _configuration;
+    private readonly ICacheService _cache;
 
     public AuthController(
     AppDbContext dbContext,
     IConfiguration configuration,
-    IHttpClientFactory httpClientFactory)
+    IHttpClientFactory httpClientFactory,
+    ICacheService cache)
     {
         _dbContext = dbContext;
         _configuration = configuration;
         _httpClientFactory = httpClientFactory;
+        _cache = cache;
     }
 
     /// <summary>
@@ -143,6 +147,9 @@ CancellationToken cancellationToken)
         user.UpdatedAt = DateTime.UtcNow;
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+
+        // LastLoginAt is part of the cached user directory entries.
+        _cache.RemoveByPrefix(CacheKeys.UsersPrefix);
 
         var accessToken = root.GetProperty("access_token").GetString()!;
 

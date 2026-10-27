@@ -1,7 +1,9 @@
-using ApexApp.Api.Authorization;
+﻿using ApexApp.Api.Authorization;
+using ApexApp.Api.Caching;
 using ApexApp.Api.Diagnostics;
 using ApexApp.Api.Swagger;
 using ApexApp.Infrastructure.Auth;
+using ApexApp.Infrastructure.Caching;
 using ApexApp.Infrastructure.Data;
 using ApexApp.Infrastructure.Repositories;
 using ApexApp.Infrastructure.Services;
@@ -41,6 +43,12 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 });
 
 builder.Services.AddRequestTimingDiagnostics(builder.Configuration);
+
+// In-memory cache for shared read models (categories, catalog, achievements,
+// leaderboard, survey results, user directory, roles). Keys and TTLs are
+// defined in ApexApp.Infrastructure.Caching.CacheKeys; no external cache is used.
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<ICacheService, MemoryCacheService>();
 
 var connectionString =
     builder.Configuration.GetConnectionString("DefaultConnection");
