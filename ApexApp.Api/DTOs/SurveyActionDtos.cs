@@ -7,11 +7,13 @@ namespace ApexApp.Api.DTOs
     /// <param name="ResponseId">Идентификатор созданного ответа.</param>
     /// <param name="SubmittedAt">Дата и время отправки.</param>
     /// <param name="AnswersCount">Количество сохранённых ответов на вопросы.</param>
+    /// <param name="RewardAmount">Сумма награды.</param>
     public sealed record SubmitSurveyResultDto(
         long SurveyId,
         long ResponseId,
         DateTime SubmittedAt,
-        int AnswersCount);
+        int AnswersCount,
+        long RewardAmount);
 
     /// <summary>
     /// Количество ответов на вариант.

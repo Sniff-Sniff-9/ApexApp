@@ -8,6 +8,8 @@ public static class ActivityRewardEntityTypes
     public const string Quest = "quest";
 
     public const string Event = "event";
+
+    public const string Survey = "survey";
 }
 
 /// <summary>

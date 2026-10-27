@@ -932,6 +932,10 @@ namespace ApexApp.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_active");
 
+                    b.Property<long>("RewardAmount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("reward_amount");
+
                     b.Property<DateTime?>("StartAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("start_at");

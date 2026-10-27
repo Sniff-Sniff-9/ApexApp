@@ -177,7 +177,8 @@ public sealed class SurveysController(ISurveyService surveyService) : ApiControl
                 submission.Response.SurveyId,
                 submission.Response.Id,
                 submission.Response.SubmittedAt,
-                submission.AnswersCount));
+                submission.AnswersCount,
+                submission.RewardAmount));
     }
 
     /// <summary>
@@ -298,6 +299,7 @@ public sealed class SurveysController(ISurveyService surveyService) : ApiControl
             new SurveyCommand(
                 request.Title,
                 request.Description,
+                request.RewardAmount,
                 request.StartAt,
                 request.EndAt,
                 request.AllowMultipleResponses,
@@ -348,6 +350,7 @@ public sealed class SurveysController(ISurveyService surveyService) : ApiControl
             new SurveyCommand(
                 request.Title,
                 request.Description,
+                request.RewardAmount,
                 request.StartAt,
                 request.EndAt,
                 request.AllowMultipleResponses,

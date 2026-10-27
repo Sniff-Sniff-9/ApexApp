@@ -11,10 +11,19 @@ namespace ApexApp.Infrastructure.Services;
 /// Сценарии анкет: список и детали, отправка ответов, собственные ответы,
 /// администрирование анкет и вопросов, а также агрегированные результаты.
 /// </summary>
-public sealed class SurveyService(AppDbContext dbContext) : ISurveyService
+public sealed class SurveyService : ISurveyService
 {
+    private readonly AppDbContext dbContext;
+    private readonly ActivityRewardGranter activityRewardGranter;
+
     private const int TitleMaxLength = 200;
     private const int TextAnswerMaxLength = 4000;
+
+    public SurveyService(AppDbContext dbContext, ActivityRewardGranter activityRewardGranter)
+    {
+        this.dbContext = dbContext;
+        this.activityRewardGranter = activityRewardGranter;
+    }
 
     /// <inheritdoc />
     public async Task<PagedResult<SurveySummary>> GetAvailableAsync(
@@ -300,6 +309,28 @@ public sealed class SurveyService(AppDbContext dbContext) : ISurveyService
             }
 
             await dbContext.SaveChangesAsync(cancellationToken);
+
+            // Начисляем награду после сохранения ответа, чтобы response.Id уже был известен.
+            if (survey.RewardAmount > 0)
+            {
+                var credit = await activityRewardGranter.GrantAsync(
+                    userId,
+                    survey.RewardAmount,
+                    $"Награда за прохождение анкеты \"{survey.Title}\"",
+                    ActivityRewardEntityTypes.Survey,
+                    response.Id,
+                    cancellationToken);
+
+                if (!credit.IsSuccess)
+                {
+                    await databaseTransaction.RollbackAsync(cancellationToken);
+
+                    return ServiceResult<SurveySubmissionResult>.Fail(
+                        credit.StatusCode,
+                        credit.Error!);
+                }
+            }
+
             await databaseTransaction.CommitAsync(cancellationToken);
         }
         catch (DbUpdateException exception) when (DatabaseErrors.IsUniqueViolation(exception))
@@ -317,13 +348,15 @@ public sealed class SurveyService(AppDbContext dbContext) : ISurveyService
         }
         catch (Exception exception) when (DatabaseErrors.IsRetryableConflict(exception))
         {
+            await databaseTransaction.RollbackAsync(cancellationToken);
+
             return ServiceResult<SurveySubmissionResult>.Fail(
                 409,
                 "The survey submission conflicted with another request. Please retry.");
         }
 
         return ServiceResult<SurveySubmissionResult>.Ok(
-            new SurveySubmissionResult(response!, prepared.Count));
+            new SurveySubmissionResult(response!, prepared.Count, survey.RewardAmount));
     }
 
     /// <inheritdoc />
@@ -412,6 +445,7 @@ public sealed class SurveyService(AppDbContext dbContext) : ISurveyService
         {
             Title = command.Title!.Trim(),
             Description = NormalizeOptional(command.Description),
+            RewardAmount = command.RewardAmount,
             StartAt = ToUtc(command.StartAt),
             EndAt = ToUtc(command.EndAt),
             AllowMultipleResponses = command.AllowMultipleResponses,
@@ -470,6 +504,7 @@ public sealed class SurveyService(AppDbContext dbContext) : ISurveyService
 
         survey.Title = command.Title!.Trim();
         survey.Description = NormalizeOptional(command.Description);
+        survey.RewardAmount = command.RewardAmount;
         survey.StartAt = ToUtc(command.StartAt);
         survey.EndAt = ToUtc(command.EndAt);
         survey.AllowMultipleResponses = command.AllowMultipleResponses;

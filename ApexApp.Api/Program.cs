@@ -155,7 +155,7 @@ builder.Services.AddAuthorization(options =>
     {
         policy.RequireAuthenticatedUser();
         policy.AddRequirements(new ActiveUserRequirement());
-        policy.AddRequirements(new AnyRoleRequirement(RoleCodes.Admin, RoleCodes.SuperAdmin));
+        policy.AddRequirements(new AnyRoleRequirement(RoleCodes.Admin, RoleCodes.SuperAdmin, RoleCodes.Manager));
     });
 
     options.AddPolicy(AppPolicies.ManageRoles, policy =>
@@ -190,14 +190,14 @@ builder.Services.AddAuthorization(options =>
     {
         policy.RequireAuthenticatedUser();
         policy.AddRequirements(new ActiveUserRequirement());
-        policy.AddRequirements(new AnyRoleRequirement(RoleCodes.Admin, RoleCodes.SuperAdmin));
+        policy.AddRequirements(new AnyRoleRequirement(RoleCodes.Admin, RoleCodes.SuperAdmin, RoleCodes.HumanResources));
     });
 
     options.AddPolicy(AppPolicies.ModerateActivities, policy =>
     {
         policy.RequireAuthenticatedUser();
         policy.AddRequirements(new ActiveUserRequirement());
-        policy.AddRequirements(new AnyRoleRequirement(RoleCodes.Manager, RoleCodes.Admin, RoleCodes.SuperAdmin));
+        policy.AddRequirements(new AnyRoleRequirement(RoleCodes.Admin, RoleCodes.SuperAdmin, RoleCodes.HumanResources));
     });
 
     options.AddPolicy(AppPolicies.ManageSupport, policy =>
@@ -205,6 +205,20 @@ builder.Services.AddAuthorization(options =>
         policy.RequireAuthenticatedUser();
         policy.AddRequirements(new ActiveUserRequirement());
         policy.AddRequirements(new AnyRoleRequirement(RoleCodes.Admin, RoleCodes.SuperAdmin));
+    });
+
+    options.AddPolicy(AppPolicies.ManageOrders, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(new ActiveUserRequirement());
+        policy.AddRequirements(new AnyRoleRequirement(RoleCodes.Admin, RoleCodes.SuperAdmin, RoleCodes.Merchandiser));
+    });
+
+    options.AddPolicy(AppPolicies.ManageCatalog, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(new ActiveUserRequirement());
+        policy.AddRequirements(new AnyRoleRequirement(RoleCodes.Admin, RoleCodes.SuperAdmin, RoleCodes.Merchandiser));
     });
 });
 

@@ -11,4 +11,6 @@ public static class AppPolicies
     public const string ManageActivities = "ManageActivities";
     public const string ModerateActivities = "ModerateActivities";
     public const string ManageSupport = "ManageSupport";
+    public const string ManageOrders = "ManageOrders";
+    public const string ManageCatalog = "ManageCatalog";
 }

@@ -187,6 +187,11 @@ public sealed class OrdersController : ApiControllerBase
     /// <summary>
     /// Получить все заказы пользователей.
     /// </summary>
+    /// <returns>Список заказов.</returns>
+    /// <response code="200">Список заказов успешно получен.</response>
+    /// <response code="401">Пользователь не авторизован.</response>
+    /// <response code="403">Недостаточно прав.</response>
+    [Authorize(Policy = AppPolicies.ManageOrders)]
     [HttpGet("all")]
     public async Task<IActionResult> GetAll(
         CancellationToken cancellationToken)
@@ -210,7 +215,7 @@ public sealed class OrdersController : ApiControllerBase
     /// <response code="403">Недостаточно прав.</response>
     /// <response code="404">Заказ не найден.</response>
     [HttpPatch("{id:long}/status")]
-    [Authorize(Policy = AppPolicies.AdjustBalances)]
+    [Authorize(Policy = AppPolicies.ManageOrders)]
     public async Task<IActionResult> UpdateStatus(
     long id,
     UpdateOrderStatusRequest request,

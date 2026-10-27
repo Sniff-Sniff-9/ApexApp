@@ -33,6 +33,36 @@ public sealed class UserProfileService : IUserProfileService
         return await GetByIdAsync(userId, includeInactive: true, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<CurrentUserProfile>?> GetByDepartmentAsync(
+    Guid managerId,
+    CancellationToken cancellationToken = default)
+    {
+        var manager = await _dbContext.Users
+            .AsNoTracking()
+            .Where(user => user.Id == managerId)
+            .Select(user => new { user.Department })
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (manager is null)
+        {
+            return null;
+        }
+
+        var users = await _dbContext.Users
+            .AsNoTracking()
+            .Where(user => user.Department == manager.Department)
+            .OrderBy(user => user.LastName)
+            .ThenBy(user => user.FirstName)
+            .ToListAsync(cancellationToken);
+
+        var userIds = users.Select(user => user.Id).ToList();
+        var rolesByUser = await LoadRolesAsync(userIds, cancellationToken);
+
+        return users
+            .Select(user => Map(user, rolesByUser.GetValueOrDefault(user.Id, [])))
+            .ToList();
+    }
+
     public async Task<IReadOnlyList<CurrentUserProfile>> ListAsync(
         bool includeInactive,
         CancellationToken cancellationToken)

@@ -34,6 +34,7 @@ public sealed class UsersController : ApiControllerBase
         _authorizationService = authorizationService;
     }
 
+
     /// <summary>
     /// Получить текущего пользователя.
     /// </summary>
@@ -242,5 +243,35 @@ public sealed class UsersController : ApiControllerBase
         }
 
         return Ok(result.Value);
+    }
+
+    /// <summary>
+    /// Получить пользователей департамента текущего руководителя.
+    /// </summary>
+    [Authorize(Policy = AppPolicies.ManageUsers)]
+    [HttpGet("my-department")]
+    [ProducesResponseType(typeof(IReadOnlyList<CurrentUserProfileDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<IReadOnlyList<CurrentUserProfileDto>>> GetMyDepartmentUsers(
+        CancellationToken cancellationToken)
+    {
+        var userId = User.GetUserId();
+
+        if (userId is null)
+        {
+            return Unauthorized();
+        }
+
+        var profiles = await _userProfileService.GetByDepartmentAsync(
+            userId.Value,
+            cancellationToken);
+
+        if (profiles is null)
+        {
+            return NotFound(new { message = "Manager profile was not found." });
+        }
+
+        return Ok(profiles.Select(CurrentUserProfileDto.From).ToList());
     }
 }

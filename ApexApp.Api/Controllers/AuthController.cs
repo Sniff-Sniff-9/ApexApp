@@ -10,6 +10,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using System.Net.Http.Json;
 using static Microsoft.EntityFrameworkCore.DbLoggerCategory.Database;
+using System.IdentityModel.Tokens.Jwt;
+using System.Linq;
 
 namespace ApexApp.Api.Controllers;
 
@@ -142,14 +144,25 @@ CancellationToken cancellationToken)
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
+        var accessToken = root.GetProperty("access_token").GetString()!;
+
+        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(accessToken);
+
+        var userRole = jwt.Claims
+            .FirstOrDefault(c => c.Type == "user_role")
+            ?.Value;
+
+        Console.WriteLine($"User role from JWT: {userRole ?? "not found"}");
+
         return Ok(new LoginResponse(
-    root.GetProperty("access_token").GetString()!,
-    root.GetProperty("token_type").GetString()!,
-    root.GetProperty("expires_in").GetInt32(),
-    root.TryGetProperty("refresh_token", out var refreshToken)
-        ? refreshToken.GetString()
-        : null,
-    user.MustChangePassword));
+            accessToken,
+            root.GetProperty("token_type").GetString()!,
+            root.GetProperty("expires_in").GetInt32(),
+            root.TryGetProperty("refresh_token", out var refreshToken)
+                ? refreshToken.GetString()
+                : null,
+            user.MustChangePassword,
+            userRole));
     }
 
     /// <summary>
@@ -231,7 +244,8 @@ CancellationToken cancellationToken)
     string TokenType,
     int ExpiresIn,
     string? RefreshToken,
-    bool MustChangePassword);
+    bool MustChangePassword,
+    string? UserRole);
 
     public sealed record LoginRequest(string Email, string Password);
 

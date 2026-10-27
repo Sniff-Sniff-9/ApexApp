@@ -30,6 +30,7 @@ namespace ApexApp.Api.DTOs
     public sealed record CreateSurveyRequest(
         string? Title,
         string? Description,
+        long RewardAmount,
         DateTime? StartAt,
         DateTime? EndAt,
         bool AllowMultipleResponses,
@@ -47,6 +48,7 @@ namespace ApexApp.Api.DTOs
     public sealed record UpdateSurveyRequest(
         string? Title,
         string? Description,
+        long RewardAmount,
         DateTime? StartAt,
         DateTime? EndAt,
         bool AllowMultipleResponses,

@@ -163,7 +163,8 @@ public sealed record SubmitSurveyCommand(IReadOnlyList<SurveyAnswerCommand> Answ
 /// </summary>
 /// <param name="Response">Созданный ответ.</param>
 /// <param name="AnswersCount">Количество сохранённых ответов на вопросы.</param>
-public sealed record SurveySubmissionResult(SurveyResponse Response, int AnswersCount);
+/// <param name="RewardAmount">Сумма награды.</param>
+public sealed record SurveySubmissionResult(SurveyResponse Response, int AnswersCount, long RewardAmount);
 
 /// <summary>
 /// Количество ответов на вариант.
@@ -212,6 +213,7 @@ public sealed record SurveyResultsResult(
 public sealed record SurveyCommand(
     string? Title,
     string? Description,
+    long RewardAmount,
     DateTime? StartAt,
     DateTime? EndAt,
     bool AllowMultipleResponses,

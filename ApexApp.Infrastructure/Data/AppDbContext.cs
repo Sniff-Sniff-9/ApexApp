@@ -614,6 +614,7 @@ public partial class AppDbContext : DbContext
                 .HasColumnName("created_at");
             entity.Property(e => e.CreatedBy).HasColumnName("created_by");
             entity.Property(e => e.Description).HasColumnName("description");
+            entity.Property(e => e.RewardAmount).HasColumnName("reward_amount");
             entity.Property(e => e.EndAt).HasColumnName("end_at");
             entity.Property(e => e.IsActive).HasColumnName("is_active");
             entity.Property(e => e.StartAt).HasColumnName("start_at");

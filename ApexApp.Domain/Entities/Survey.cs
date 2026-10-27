@@ -11,6 +11,8 @@ public partial class Survey
 
     public string? Description { get; set; }
 
+    public long RewardAmount { get; set; }
+
     public bool IsActive { get; set; }
 
     public DateTime? StartAt { get; set; }

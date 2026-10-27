@@ -89,7 +89,7 @@ public sealed class ProductsController : ApiControllerBase
     /// <response code="403">Недостаточно прав.</response>
     /// <response code="400">Некорректный запрос.</response>
     [HttpPost]
-    [Authorize(Policy = AppPolicies.AdjustBalances)]
+    [Authorize(Policy = AppPolicies.ManageCatalog)]
     public async Task<IActionResult> Create(
     CreateProductRequest request,
     CancellationToken cancellationToken)
@@ -126,7 +126,7 @@ public sealed class ProductsController : ApiControllerBase
     /// <response code="403">Недостаточно прав.</response>
     /// <response code="400">Некорректный запрос.</response>
     [HttpPut("{id:int}")]
-    [Authorize(Policy = AppPolicies.AdjustBalances)]
+    [Authorize(Policy = AppPolicies.ManageCatalog)]
     public async Task<IActionResult> Update(
         int id,
         UpdateProductRequest request,
@@ -167,7 +167,7 @@ public sealed class ProductsController : ApiControllerBase
     /// <response code="403">Недостаточно прав.</response>
     /// <response code="404">Товар не найден.</response>
     [HttpDelete("{id:int}")]
-    [Authorize(Policy = AppPolicies.AdjustBalances)]
+    [Authorize(Policy = AppPolicies.ManageCatalog)]
     public async Task<IActionResult> Delete(
         int id,
         CancellationToken cancellationToken)

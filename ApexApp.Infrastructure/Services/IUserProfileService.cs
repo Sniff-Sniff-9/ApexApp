@@ -10,6 +10,10 @@ public interface IUserProfileService
         bool includeInactive,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<CurrentUserProfile>?> GetByDepartmentAsync(
+    Guid managerId,
+    CancellationToken cancellationToken = default);
+
     Task<CurrentUserProfile?> GetByIdAsync(
         Guid userId,
         bool includeInactive,

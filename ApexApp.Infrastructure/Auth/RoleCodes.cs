@@ -7,11 +7,15 @@ public static class RoleCodes
     public const string Admin = "admin";
     public const string Support = "support";
     public const string SuperAdmin = "superadmin";
+    public const string  HumanResources = "humanresources";
+    public const string Merchandiser = "merchandiser";
 
     public static readonly string[] AdminPanelRoles =
     [
+        Manager,
+        Merchandiser,
+        HumanResources,
         Admin,
-        Support,
         SuperAdmin
     ];
 

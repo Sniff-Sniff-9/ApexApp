@@ -88,7 +88,7 @@ public sealed class CategoriesController : ApiControllerBase
     /// <response code="403">Недостаточно прав.</response>
     /// <response code="400">Некорректный запрос.</response>
     [HttpPost]
-    [Authorize(Policy = AppPolicies.AdjustBalances)]
+    [Authorize(Policy = AppPolicies.ManageCatalog)]
     public async Task<IActionResult> Create(
     CreateCategoryRequest request,
     CancellationToken cancellationToken)
@@ -118,7 +118,7 @@ public sealed class CategoriesController : ApiControllerBase
     /// <response code="403">Недостаточно прав.</response>
     /// <response code="400">Некорректный запрос.</response>
     [HttpPut("{id:int}")]
-    [Authorize(Policy = AppPolicies.AdjustBalances)]
+    [Authorize(Policy = AppPolicies.ManageCatalog)]
     public async Task<IActionResult> Update(
         int id,
         UpdateCategoryRequest request,
@@ -153,7 +153,7 @@ public sealed class CategoriesController : ApiControllerBase
     /// <response code="403">Недостаточно прав.</response>
     /// <response code="404">Категория не найдена.</response>
     [HttpDelete("{id:int}")]
-    [Authorize(Policy = AppPolicies.AdjustBalances)]
+    [Authorize(Policy = AppPolicies.ManageCatalog)]
     public async Task<IActionResult> Delete(
         int id,
         CancellationToken cancellationToken)
