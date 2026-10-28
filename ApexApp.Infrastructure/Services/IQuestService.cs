@@ -8,6 +8,13 @@ namespace ApexApp.Infrastructure.Services;
 /// </summary>
 public interface IQuestService
 {
+    Task<ServiceResult<QuestStepResult>> UpdateProofAsync(
+    long questId,
+    long stepId,
+    Guid userId,
+    CompleteQuestStepCommand command,
+    CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Возвращает страницу активных квестов, доступных в текущий момент,
     /// вместе со статусом участия пользователя.

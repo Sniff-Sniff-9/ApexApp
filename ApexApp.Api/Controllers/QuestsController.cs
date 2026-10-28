@@ -735,6 +735,36 @@ public sealed class QuestsController(IQuestService questService) : ApiController
             result.Value!.AlreadyReviewed));
     }
 
+    /// <summary>
+    /// Обновить отправленное доказательство выполнения шага.
+    /// </summary>
+    [HttpPut("{questId:long}/steps/{stepId:long}/proof")]
+    public async Task<IActionResult> UpdateProof(
+        long questId,
+        long stepId,
+        [FromBody] CompleteQuestStepRequest request,
+        CancellationToken cancellationToken)
+    {
+        var userId = User.GetUserId();
+
+        if (userId is null)
+            return Unauthorized();
+
+        var result = await questService.UpdateProofAsync(
+            questId,
+            stepId,
+            userId.Value,
+            new CompleteQuestStepCommand(
+                request.StoragePath,
+                request.Comment),
+            cancellationToken);
+
+        if (!result.IsSuccess)
+            return ToErrorResult(result.StatusCode, result.Error);
+
+        return Ok(ToDto(result.Value!));
+    }
+
     private static QuestListItemDto ToDto(QuestSummary summary) =>
         new(
             summary.Quest.Id,

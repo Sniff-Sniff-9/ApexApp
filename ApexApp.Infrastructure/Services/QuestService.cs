@@ -1539,4 +1539,129 @@ public sealed class QuestService(
             .Where(balance => balance.UserId == userId && balance.Type == BalanceType.Personal)
             .Select(balance => (long?)balance.Amount)
             .FirstOrDefaultAsync(cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<ServiceResult<QuestStepResult>> UpdateProofAsync(
+        long questId,
+        long stepId,
+        Guid userId,
+        CompleteQuestStepCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        if (questId <= 0 || stepId <= 0)
+        {
+            return ServiceResult<QuestStepResult>.Fail(
+                400, "Valid quest and step IDs are required.");
+        }
+
+        if (userId == Guid.Empty)
+        {
+            return ServiceResult<QuestStepResult>.Fail(
+                400, "A valid user ID is required.");
+        }
+
+        if (command is null)
+        {
+            return ServiceResult<QuestStepResult>.Fail(
+                400, "A completion command is required.");
+        }
+
+        var storagePath = command.StoragePath?.Trim();
+        var comment = string.IsNullOrWhiteSpace(command.Comment)
+            ? null
+            : command.Comment.Trim();
+
+        if (string.IsNullOrWhiteSpace(storagePath))
+        {
+            return ServiceResult<QuestStepResult>.Fail(
+                400, "StoragePath is required for a proof step.");
+        }
+
+        var participation = await dbContext.QuestParticipations
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                p => p.QuestId == questId && p.UserId == userId,
+                cancellationToken);
+
+        if (participation is null)
+        {
+            return ServiceResult<QuestStepResult>.Fail(
+                404, "You have not joined this quest.");
+        }
+
+        if (participation.Status != QuestParticipationStatuses.InProgress)
+        {
+            return ServiceResult<QuestStepResult>.Fail(
+                409, "Quest participation is not active.");
+        }
+
+        var step = await dbContext.QuestSteps
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                s => s.Id == stepId
+                     && s.QuestId == questId
+                     && s.CompletionType == QuestStepCompletionType.Proof,
+                cancellationToken);
+
+        if (step is null)
+        {
+            return ServiceResult<QuestStepResult>.Fail(
+                404, "Proof step was not found.");
+        }
+
+        await using var transaction = await dbContext.Database
+            .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+
+        try
+        {
+            var completion = await dbContext.QuestStepCompletions
+                .Include(c => c.QuestProofs)
+                .FirstOrDefaultAsync(
+                    c => c.ParticipationId == participation.Id
+                         && c.StepId == stepId,
+                    cancellationToken);
+
+            if (completion is null)
+            {
+                return ServiceResult<QuestStepResult>.Fail(
+                    404, "Proof submission was not found.");
+            }
+
+            var latestProof = LatestProof(completion);
+
+            if (latestProof is null)
+            {
+                return ServiceResult<QuestStepResult>.Fail(
+                    404, "Proof submission was not found.");
+            }
+
+            if (latestProof.Status != QuestProofStatuses.Pending)
+            {
+                return ServiceResult<QuestStepResult>.Fail(
+                    409,
+                    "Only proof submissions awaiting review can be edited.");
+            }
+
+            latestProof.StoragePath = storagePath;
+            latestProof.Comment = comment;
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            return ServiceResult<QuestStepResult>.Ok(
+                new QuestStepResult(
+                    completion,
+                    QuestStepCompletionTypeNames.ToDbValue(step.CompletionType),
+                    false,
+                    QuestProofStatuses.Pending,
+                    false));
+        }
+        catch (Exception exception)
+            when (IsRetryableConflict(exception) || IsUniqueViolation(exception))
+        {
+            return ServiceResult<QuestStepResult>.Fail(
+                409,
+                "The proof update conflicted with another request. Please retry.");
+        }
+    }
 }
