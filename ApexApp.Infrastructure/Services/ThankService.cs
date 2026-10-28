@@ -1,5 +1,6 @@
 ﻿using ApexApp.Domain.Entities;
 using ApexApp.Infrastructure.Caching;
+using ApexApp.Infrastructure.Common;
 using ApexApp.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -47,70 +48,81 @@ public sealed class ThankService : IThankService
             await dbContext.Database.BeginTransactionAsync(
                 IsolationLevel.Serializable, cancellationToken);
 
-        var senderExists = await dbContext.Users
-            .AnyAsync(u => u.Id == fromUserId, cancellationToken);
+        // Один запрос отдаёт всё, что нужно решению: существование отправителя и получателя,
+        // признаки «уже благодарил» и «первая благодарность», а также баланс получателя.
+        var sevenDaysAgo = now.AddDays(-7);
 
-        if (!senderExists)
+        var state = await dbContext.Users
+            .AsNoTracking()
+            .Where(u => u.Id == fromUserId)
+            .Select(u => new
+            {
+                RecipientExists = dbContext.Users.Any(recipient => recipient.Id == request.ToUserId),
+                HasRecentThank = dbContext.Set<Thank>().Any(t =>
+                    t.FromUserId == fromUserId &&
+                    t.ToUserId == request.ToUserId &&
+                    t.CreatedAt > sevenDaysAgo),
+                HasAnyThank = dbContext.Set<Thank>().Any(t => t.FromUserId == fromUserId),
+                Balance = dbContext.Balances
+                    .Where(b => b.UserId == request.ToUserId && b.Type == BalanceType.Personal)
+                    .Select(b => new { b.Amount, b.Version })
+                    .FirstOrDefault()
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (state is null)
             return ThanksResult.Fail(404, "Sender was not found.");
 
-        var recipientExists = await dbContext.Users
-            .AnyAsync(u => u.Id == request.ToUserId, cancellationToken);
-
-        if (!recipientExists)
+        if (!state.RecipientExists)
             return ThanksResult.Fail(404, "Recipient was not found.");
 
-        var alreadyThanked = await dbContext.Set<Thank>()
-            .AnyAsync(t =>
-                t.FromUserId == fromUserId &&
-                t.ToUserId == request.ToUserId &&
-                t.CreatedAt > now.AddDays(-7),
-                cancellationToken);
-
-        if (alreadyThanked)
+        if (state.HasRecentThank)
             return ThanksResult.Fail(
                 409, "You have already thanked this user in the last 7 days.");
 
-        var hasPreviousThank = await dbContext.Set<Thank>()
-            .AnyAsync(
-                t => t.FromUserId == fromUserId,
-                cancellationToken);
+        var isFirstThank = !state.HasAnyThank;
 
-        var isFirstThank = !hasPreviousThank;
-
-        var balance = await dbContext.Balances
-            .SingleOrDefaultAsync(
-                b => b.UserId == request.ToUserId &&
-                     b.Type == BalanceType.Personal,
-                cancellationToken);
-
-        var isNewBalance = balance is null;
-
-        balance ??= new Balance
-        {
-            UserId = request.ToUserId,
-            Type = BalanceType.Personal,
-            Amount = 0,
-            Version = 0,
-            UpdatedAt = now
-        };
+        var currentAmount = state.Balance?.Amount ?? 0;
+        var currentVersion = state.Balance?.Version ?? 0;
 
         long newAmount;
+        int newVersion;
 
         try
         {
-            newAmount = checked(balance.Amount + request.Amount);
-            balance.Version = checked(balance.Version + 1);
+            newAmount = checked(currentAmount + request.Amount);
+            newVersion = checked(currentVersion + 1);
         }
         catch (OverflowException)
         {
             return ThanksResult.Fail(400, "Balance exceeds the supported range.");
         }
 
-        balance.Amount = newAmount;
-        balance.UpdatedAt = now;
-
-        if (isNewBalance)
-            dbContext.Balances.Add(balance);
+        if (state.Balance is null)
+        {
+            dbContext.Balances.Add(new Balance
+            {
+                UserId = request.ToUserId,
+                Type = BalanceType.Personal,
+                Amount = newAmount,
+                Version = newVersion,
+                UpdatedAt = now
+            });
+        }
+        else
+        {
+            // Баланс записывается одним UPDATE: сущность не попадает в трекер,
+            // а строка блокируется транзакцией на время изменения.
+            await dbContext.Balances
+                .Where(b => b.UserId == request.ToUserId &&
+                            b.Type == BalanceType.Personal)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(b => b.Amount, newAmount)
+                        .SetProperty(b => b.Version, newVersion)
+                        .SetProperty(b => b.UpdatedAt, now),
+                    cancellationToken);
+        }
 
         var thank = new Thank
         {
@@ -124,24 +136,35 @@ public sealed class ThankService : IThankService
 
         dbContext.Set<Thank>().Add(thank);
 
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        dbContext.Set<Transaction>().Add(new Transaction
+        try
         {
-            UserId = request.ToUserId,
-            Type = TransactionType.Thanks,
-            Amount = request.Amount,
-            BalanceAfter = newAmount,
-            Description = request.Message,
-            CreatedBy = fromUserId,
-            RelatedUserId = fromUserId,
-            RelatedEntityType = "thank",
-            RelatedEntityId = thank.Id,
-            CreatedAt = now
-        });
+            // thank.Id нужен для RelatedEntityId, поэтому сохранение двухэтапное.
+            await dbContext.SaveChangesAsync(cancellationToken);
 
-        await dbContext.SaveChangesAsync(cancellationToken);
-        await dbTransaction.CommitAsync(cancellationToken);
+            dbContext.Set<Transaction>().Add(new Transaction
+            {
+                UserId = request.ToUserId,
+                Type = TransactionType.Thanks,
+                Amount = request.Amount,
+                BalanceAfter = newAmount,
+                Description = request.Message,
+                CreatedBy = fromUserId,
+                RelatedUserId = fromUserId,
+                RelatedEntityType = "thank",
+                RelatedEntityId = thank.Id,
+                CreatedAt = now
+            });
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await dbTransaction.CommitAsync(cancellationToken);
+        }
+        catch (Exception exception) when (DatabaseErrors.IsRetryableConflict(exception))
+        {
+            // Ранее ошибки сериализации (40001) и взаимоблокировки (40P01)
+            // уходили клиенту как 500 вместо корректного 409.
+            return ThanksResult.Fail(
+                409, "A concurrent thank changed the data. Please retry.");
+        }
 
         // The leaderboard aggregates the number of thanks received.
         _cache.RemoveByPrefix(CacheKeys.LeaderboardPrefix);
@@ -161,11 +184,13 @@ public sealed class ThankService : IThankService
 
                 if (achievementAwarded)
                 {
-                    newAchievement = await dbContext.Achievements
-                        .AsNoTracking()
-                        .FirstOrDefaultAsync(
-                            a => a.Code == "FIRST_THANK",
-                            cancellationToken);
+                    // Справочник ачивок кэширован, поэтому описание берётся
+                    // без дополнительного запроса после SaveChanges.
+                    var achievements = await _achievementService
+                        .GetAllAsync(cancellationToken);
+
+                    newAchievement = achievements
+                        .FirstOrDefault(a => a.Code == "FIRST_THANK");
                 }
             }
             catch (Exception ex)
@@ -238,64 +263,55 @@ public sealed class ThankService : IThankService
 
         var now = DateTime.UtcNow;
 
-        var managerExists = await dbContext.Users
-            .AnyAsync(u => u.Id == managerId, cancellationToken);
+        // Один запрос отдаёт существование получателя и оба баланса:
+        // отдельные чтения пользователей и балансов больше не нужны.
+        var state = await dbContext.Users
+            .AsNoTracking()
+            .Where(u => u.Id == managerId)
+            .Select(u => new
+            {
+                RecipientExists = dbContext.Users.Any(recipient => recipient.Id == request.ToUserId),
+                ManagerBalance = dbContext.Balances
+                    .Where(b => b.UserId == managerId && b.Type == BalanceType.Reward)
+                    .Select(b => new { b.Amount, b.Version })
+                    .FirstOrDefault(),
+                RecipientBalance = dbContext.Balances
+                    .Where(b => b.UserId == request.ToUserId && b.Type == BalanceType.Personal)
+                    .Select(b => new { b.Amount, b.Version })
+                    .FirstOrDefault()
+            })
+            .FirstOrDefaultAsync(cancellationToken);
 
-        if (!managerExists)
+        if (state is null)
             return ThanksResult.Fail(404, "Manager was not found.");
 
-        var recipientExists = await dbContext.Users
-            .AnyAsync(u => u.Id == request.ToUserId, cancellationToken);
-
-        if (!recipientExists)
+        if (!state.RecipientExists)
             return ThanksResult.Fail(404, "Recipient was not found.");
 
-        var managerBalance = await dbContext.Balances
-            .SingleOrDefaultAsync(
-                b => b.UserId == managerId &&
-                     b.Type == BalanceType.Reward,
-                cancellationToken);
-
-        if (managerBalance is null ||
-            managerBalance.Amount < request.Amount)
+        if (state.ManagerBalance is null ||
+            state.ManagerBalance.Amount < request.Amount)
         {
             return ThanksResult.Fail(
                 409, "Insufficient reward balance.");
         }
 
-        var recipientBalance = await dbContext.Balances
-            .SingleOrDefaultAsync(
-                b => b.UserId == request.ToUserId &&
-                     b.Type == BalanceType.Personal,
-                cancellationToken);
-
-        var isNewRecipientBalance = recipientBalance is null;
-
-        recipientBalance ??= new Balance
-        {
-            UserId = request.ToUserId,
-            Type = BalanceType.Personal,
-            Amount = 0,
-            Version = 0,
-            UpdatedAt = now
-        };
+        var managerAmount = state.ManagerBalance.Amount;
+        var managerVersion = state.ManagerBalance.Version;
+        var isNewRecipientBalance = state.RecipientBalance is null;
+        var recipientAmount = state.RecipientBalance?.Amount ?? 0;
+        var recipientVersion = state.RecipientBalance?.Version ?? 0;
 
         long managerNewAmount;
         long recipientNewAmount;
+        int managerNewVersion;
+        int recipientNewVersion;
 
         try
         {
-            managerNewAmount =
-                checked(managerBalance.Amount - request.Amount);
-
-            recipientNewAmount =
-                checked(recipientBalance.Amount + request.Amount);
-
-            managerBalance.Version =
-                checked(managerBalance.Version + 1);
-
-            recipientBalance.Version =
-                checked(recipientBalance.Version + 1);
+            managerNewAmount = checked(managerAmount - request.Amount);
+            recipientNewAmount = checked(recipientAmount + request.Amount);
+            managerNewVersion = checked(managerVersion + 1);
+            recipientNewVersion = checked(recipientVersion + 1);
         }
         catch (OverflowException)
         {
@@ -303,16 +319,39 @@ public sealed class ThankService : IThankService
                 400, "Balance exceeds the supported range.");
         }
 
-        managerBalance.Amount = managerNewAmount;
-        managerBalance.UpdatedAt = now;
-
-        recipientBalance.Amount = recipientNewAmount;
-        recipientBalance.UpdatedAt = now;
+        // Балансы записываются двумя UPDATE в прежнем порядке (менеджер, затем получатель),
+        // поэтому порядок блокировки строк не меняется.
+        await dbContext.Balances
+            .Where(b => b.UserId == managerId && b.Type == BalanceType.Reward)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(b => b.Amount, managerNewAmount)
+                    .SetProperty(b => b.Version, managerNewVersion)
+                    .SetProperty(b => b.UpdatedAt, now),
+                cancellationToken);
 
         if (isNewRecipientBalance)
-            dbContext.Balances.Add(recipientBalance);
-
-        await dbContext.SaveChangesAsync(cancellationToken);
+        {
+            dbContext.Balances.Add(new Balance
+            {
+                UserId = request.ToUserId,
+                Type = BalanceType.Personal,
+                Amount = recipientNewAmount,
+                Version = recipientNewVersion,
+                UpdatedAt = now
+            });
+        }
+        else
+        {
+            await dbContext.Balances
+                .Where(b => b.UserId == request.ToUserId && b.Type == BalanceType.Personal)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(b => b.Amount, recipientNewAmount)
+                        .SetProperty(b => b.Version, recipientNewVersion)
+                        .SetProperty(b => b.UpdatedAt, now),
+                    cancellationToken);
+        }
 
         dbContext.Set<Transaction>().Add(new Transaction
         {
@@ -340,8 +379,18 @@ public sealed class ThankService : IThankService
             CreatedAt = now
         });
 
-        await dbContext.SaveChangesAsync(cancellationToken);
-        await dbTransaction.CommitAsync(cancellationToken);
+        try
+        {
+            // Балансы и обе записи ledger сохраняются одним SaveChanges:
+            // зависимостей по сгенерированным идентификаторам между ними нет.
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await dbTransaction.CommitAsync(cancellationToken);
+        }
+        catch (Exception exception) when (DatabaseErrors.IsRetryableConflict(exception))
+        {
+            return ThanksResult.Fail(
+                409, "A concurrent bonus changed the data. Please retry.");
+        }
 
         return new ThanksResult(201, null, null, null);
     }

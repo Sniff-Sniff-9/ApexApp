@@ -1,4 +1,4 @@
-using System.Data;
+﻿using System.Data;
 using ApexApp.Domain.Entities;
 using ApexApp.Infrastructure.Common;
 using ApexApp.Infrastructure.Data;
@@ -72,7 +72,72 @@ public sealed class ActivityRewardGranter(
 
         if (!credit.IsSuccess)
         {
-            await databaseTransaction.RollbackAsync(cancellationToken);
+            await databaseTransaction.RollbackQuietlyAsync();
+
+            return credit;
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await databaseTransaction.CommitAsync(cancellationToken);
+
+        return credit;
+    }
+
+    /// <summary>
+    /// Начисляет награду на личный баланс пользователя, существование которого уже
+    /// гарантировано внешним ключом вызывающей сущности (участие в квесте, участие
+    /// в мероприятии, ответ на опрос), поэтому проверка пользователя не выполняется.
+    /// Если вызывающий код уже открыл транзакцию БД, начисление выполняется в её рамках,
+    /// иначе создаётся собственная транзакция уровня <see cref="IsolationLevel.Serializable"/>.
+    /// </summary>
+    /// <param name="userId">Идентификатор пользователя.</param>
+    /// <param name="amount">Сумма награды (должна быть больше нуля).</param>
+    /// <param name="description">Описание транзакции.</param>
+    /// <param name="relatedEntityType">Тип сущности-источника награды.</param>
+    /// <param name="relatedEntityId">Идентификатор сущности-источника награды.</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    public async Task<ServiceResult<Balance>> GrantForKnownUserAsync(
+        Guid userId,
+        long amount,
+        string description,
+        string relatedEntityType,
+        long relatedEntityId,
+        CancellationToken cancellationToken = default)
+    {
+        if (dbContext.Database.CurrentTransaction is not null)
+        {
+            var ambientCredit = await CreditKnownUserAsync(
+                userId,
+                amount,
+                description,
+                relatedEntityType,
+                relatedEntityId,
+                cancellationToken);
+
+            if (!ambientCredit.IsSuccess)
+            {
+                return ambientCredit;
+            }
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            return ambientCredit;
+        }
+
+        await using var databaseTransaction = await dbContext.Database
+            .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+
+        var credit = await CreditKnownUserAsync(
+            userId,
+            amount,
+            description,
+            relatedEntityType,
+            relatedEntityId,
+            cancellationToken);
+
+        if (!credit.IsSuccess)
+        {
+            await databaseTransaction.RollbackQuietlyAsync();
 
             return credit;
         }
@@ -118,6 +183,69 @@ public sealed class ActivityRewardGranter(
             return ServiceResult<Balance>.Fail(404, "User was not found.");
         }
 
+        return await ApplyCreditAsync(
+            userId,
+            amount,
+            description,
+            relatedEntityType,
+            relatedEntityId,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Подготавливает начисление награды для пользователя, существование которого
+    /// уже гарантировано внешним ключом вызывающей сущности.
+    /// </summary>
+    /// <param name="userId">Идентификатор пользователя.</param>
+    /// <param name="amount">Сумма награды (должна быть больше нуля).</param>
+    /// <param name="description">Описание транзакции.</param>
+    /// <param name="relatedEntityType">Тип сущности-источника награды.</param>
+    /// <param name="relatedEntityId">Идентификатор сущности-источника награды.</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    public async Task<ServiceResult<Balance>> CreditKnownUserAsync(
+        Guid userId,
+        long amount,
+        string description,
+        string relatedEntityType,
+        long relatedEntityId,
+        CancellationToken cancellationToken = default)
+    {
+        if (userId == Guid.Empty)
+        {
+            return ServiceResult<Balance>.Fail(400, "A valid user ID is required.");
+        }
+
+        if (amount <= 0)
+        {
+            return ServiceResult<Balance>.Fail(400, "The reward amount must be greater than zero.");
+        }
+
+        if (string.IsNullOrWhiteSpace(relatedEntityType))
+        {
+            return ServiceResult<Balance>.Fail(400, "A related entity type is required.");
+        }
+
+        return await ApplyCreditAsync(
+            userId,
+            amount,
+            description,
+            relatedEntityType,
+            relatedEntityId,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Изменяет баланс и добавляет транзакцию в контекст;
+    /// проверки входных данных выполняет вызывающий код.
+    /// </summary>
+    private async Task<ServiceResult<Balance>> ApplyCreditAsync(
+        Guid userId,
+        long amount,
+        string description,
+        string relatedEntityType,
+        long relatedEntityId,
+        CancellationToken cancellationToken)
+    {
         var balance = await balanceRepository.GetByUserIdAsync(userId, BalanceType.Personal, cancellationToken);
         var isNewBalance = balance is null;
 
