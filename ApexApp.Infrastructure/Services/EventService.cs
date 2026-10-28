@@ -1,4 +1,4 @@
-﻿using System.Data;
+using System.Data;
 using ApexApp.Domain.Entities;
 using ApexApp.Infrastructure.Common;
 using ApexApp.Infrastructure.Data;
@@ -252,7 +252,7 @@ public sealed class EventService(
         {
             // Конкурентный запрос уже создал регистрацию: возвращаем согласованный результат,
             // а не 409, чтобы повторный вызов оставался идемпотентным.
-            await databaseTransaction.RollbackQuietlyAsync();
+            await databaseTransaction.RollbackAsync(cancellationToken);
 
             if (created is not null)
             {

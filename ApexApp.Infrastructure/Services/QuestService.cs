@@ -1,4 +1,4 @@
-﻿using System.Data;
+using System.Data;
 using System.Text.Json;
 using ApexApp.Domain.Entities;
 using ApexApp.Infrastructure.Common;
@@ -399,7 +399,7 @@ public sealed class QuestService(
                     // Конкурентный запрос уже создал завершение этого же шага. Строка к моменту
                     // ошибки уникальности зафиксирована, поэтому запрос возвращает успех победителя
                     // (идемпотентный результат), а не 409.
-                    await databaseTransaction.RollbackQuietlyAsync();
+                    await databaseTransaction.RollbackAsync(cancellationToken);
                     dbContext.Entry(completion).State = EntityState.Detached;
 
                     var concurrent = await dbContext.QuestStepCompletions
@@ -639,36 +639,29 @@ public sealed class QuestService(
         {
             try
             {
-                // Условный UPDATE переводит участие в completed только из in_progress и
-                // одновременно фиксирует флаг награды, поэтому инвариант перехода не зависит
-                // от уровня изоляции: проигравший конкурент получает 0 строк вместо повторного
-                // завершения, а награда не может быть выдана дважды.
+                // Условный UPDATE переводит участие в completed только из in_progress,
+                // поэтому инвариант перехода не зависит от уровня изоляции: проигравший
+                // конкурент получает 0 строк вместо повторного завершения.
                 var transitioned = await dbContext.QuestParticipations
                     .Where(item => item.Id == participation.Id
-                                   && item.Status == QuestParticipationStatuses.InProgress
-                                   && !item.RewardClaimed)
+                                   && item.Status == QuestParticipationStatuses.InProgress)
                     .ExecuteUpdateAsync(
                         setters => setters
                             .SetProperty(item => item.Status, QuestParticipationStatuses.Completed)
-                            .SetProperty(item => item.CompletedAt, (DateTime?)completedAt)
-                            .SetProperty(item => item.RewardClaimed, true),
+                            .SetProperty(item => item.CompletedAt, (DateTime?)completedAt),
                         cancellationToken);
 
                 if (transitioned == 0)
                 {
-                    await databaseTransaction.RollbackQuietlyAsync();
+                    await databaseTransaction.RollbackAsync(cancellationToken);
                 }
                 else
                 {
                     // Награда (включая нулевую) начисляется в той же транзакции, что и переход
-                    // статуса: флаг выдачи уже зафиксирован условным UPDATE выше, поэтому
-                    // награда не выдаётся повторно и не требует повторного чтения участия.
+                    // статуса: сумма читается внутри транзакции, поэтому решение не опирается
+                    // на устаревший снимок.
                     var reward = await activityRewardService.GrantQuestRewardAsync(
-                        new QuestRewardGrant(
-                            participation.UserId,
-                            participation.Id,
-                            quest.RewardAmount,
-                            quest.Title),
+                        participation.Id,
                         cancellationToken);
 
                     if (!reward.IsSuccess)

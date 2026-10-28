@@ -58,12 +58,8 @@ public sealed class RoleManagementService : IRoleManagementService
             return ServiceResult<CurrentUserProfile>.Fail(403, "You cannot modify your own roles.");
         }
 
-        // Пользователь загружается один раз: наличие, 404 и итоговый профиль
-        // строятся из этой же сущности без повторных запросов.
-        var targetUser = await _dbContext.Users
-            .FirstOrDefaultAsync(user => user.Id == targetUserId, cancellationToken);
-
-        if (targetUser is null)
+        var targetExists = await _dbContext.Users.AnyAsync(user => user.Id == targetUserId, cancellationToken);
+        if (!targetExists)
         {
             return ServiceResult<CurrentUserProfile>.Fail(404, "User profile was not found.");
         }
@@ -110,12 +106,7 @@ public sealed class RoleManagementService : IRoleManagementService
         // Cached user directory entries embed role codes.
         _cache.RemoveByPrefix(CacheKeys.UsersPrefix);
 
-        // Профиль собирается из уже загруженных данных: повторное чтение
-        // пользователя и его ролей после SaveChanges не требуется.
-        var profile = _userProfileService.BuildProfile(
-            targetUser,
-            roles.Select(role => role.Code));
-
-        return ServiceResult<CurrentUserProfile>.Ok(profile);
+        var profile = await _userProfileService.GetCurrentAsync(targetUserId, cancellationToken);
+        return ServiceResult<CurrentUserProfile>.Ok(profile!);
     }
 }

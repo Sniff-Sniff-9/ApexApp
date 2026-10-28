@@ -19,18 +19,6 @@ public interface IActivityRewardService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Начисляет награду за квест, факт выдачи которой уже зафиксирован вызывающим кодом
-    /// (переход участия в <c>completed</c> вместе с флагом <c>reward_claimed</c>).
-    /// Повторное чтение участия, квеста и запись флага не выполняются.
-    /// Для квеста с нулевой наградой транзакция в ledger не создаётся.
-    /// </summary>
-    /// <param name="grant">Пользователь, участие, сумма и название квеста.</param>
-    /// <param name="cancellationToken">Токен отмены.</param>
-    Task<ServiceResult<ActivityRewardResult>> GrantQuestRewardAsync(
-        QuestRewardGrant grant,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
     /// Начисляет награду за посещённое мероприятие.
     /// Повторный вызов не начисляет награду повторно.
     /// </summary>

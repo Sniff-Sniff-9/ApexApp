@@ -24,16 +24,3 @@ public sealed record ActivityRewardResult(
     long Amount,
     long? BalanceAfter,
     bool AlreadyGranted);
-
-/// <summary>
-/// Данные награды за квест, факт выдачи которой вызывающий код уже зафиксировал.
-/// </summary>
-/// <param name="UserId">Идентификатор пользователя-участника.</param>
-/// <param name="QuestParticipationId">Идентификатор участия в квесте.</param>
-/// <param name="RewardAmount">Сумма награды.</param>
-/// <param name="QuestTitle">Название квеста для описания транзакции.</param>
-public sealed record QuestRewardGrant(
-    Guid UserId,
-    long QuestParticipationId,
-    long RewardAmount,
-    string QuestTitle);
