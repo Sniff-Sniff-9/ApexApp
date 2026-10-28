@@ -1,9 +1,9 @@
 ﻿using ApexApp.Domain.Entities;
 using ApexApp.Infrastructure.Caching;
-using ApexApp.Infrastructure.Common;
 using ApexApp.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 using System.Data;
 
 namespace ApexApp.Infrastructure.Services;
@@ -41,28 +41,16 @@ public sealed class OrderService : IOrderService
 
         try
         {
-            // Признак первого заказа читается тем же запросом, что и корзина: блок выполняется
-            // в транзакции Serializable, поэтому оба значения относятся к одному снимку данных.
-            var cartRows = await _dbContext.Set<CartItem>()
+            var cartItems = await _dbContext.Set<CartItem>()
                 .Where(x => x.UserId == userId)
                 .OrderBy(x => x.ProductId)
-                .Select(x => new
-                {
-                    Item = x,
-                    HasPreviousPaidOrder = _dbContext.Set<Order>()
-                        .Any(order => order.UserId == userId && order.Status == OrderStatus.Paid)
-                })
                 .ToListAsync(cancellationToken);
 
-            if (cartRows.Count == 0)
+            if (cartItems.Count == 0)
                 return (false, 400, "Cart is empty.", null, null);
-
-            var cartItems = cartRows.Select(row => row.Item).ToList();
 
             if (cartItems.Any(x => x.Quantity <= 0))
                 return (false, 400, "Cart contains an invalid quantity.", null, null);
-
-            var isFirstOrder = !cartRows[0].HasPreviousPaidOrder;
 
             var productIds = cartItems.Select(x => x.ProductId).Distinct().ToArray();
 
@@ -130,6 +118,14 @@ public sealed class OrderService : IOrderService
 
             var now = DateTime.UtcNow;
 
+            var hasPreviousPaidOrder = await _dbContext.Set<Order>()
+            .AnyAsync(
+                o => o.UserId == userId &&
+                     o.Status == OrderStatus.Paid,
+                cancellationToken);
+
+            var isFirstOrder = !hasPreviousPaidOrder;
+
             var order = new Order
             {
                 UserId = userId,
@@ -180,13 +176,7 @@ public sealed class OrderService : IOrderService
                 CreatedAt = now
             });
 
-            // Позиции корзины удаляются одним DELETE по прочитанным выше идентификаторам:
-            // загружать сущности в трекер только ради удаления не нужно.
-            var cartItemIds = cartItems.Select(item => item.Id).ToArray();
-
-            await _dbContext.Set<CartItem>()
-                .Where(item => cartItemIds.Contains(item.Id))
-                .ExecuteDeleteAsync(cancellationToken);
+            _dbContext.Set<CartItem>().RemoveRange(cartItems);
 
             await _dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
@@ -209,10 +199,11 @@ public sealed class OrderService : IOrderService
 
                     if (achievementAwarded)
                     {
-                        // Справочник ачивок кэшируется, поэтому описание берётся из кэша
-                        // без дополнительного запроса после SaveChanges.
-                        newAchievement = await FindAchievementAsync(
-                            "FIRST_ORDER", cancellationToken);
+                        newAchievement = await _dbContext.Achievements
+                            .AsNoTracking()
+                            .FirstOrDefaultAsync(
+                                a => a.Code == "FIRST_ORDER",
+                                cancellationToken);
                     }
                 }
                 catch (Exception ex)
@@ -228,11 +219,11 @@ public sealed class OrderService : IOrderService
             return (true, 201, null, order, newAchievement);
 
         }
-        catch (Exception ex) when (DatabaseErrors.IsRetryableConflict(ex))
+        catch (PostgresException ex)
+            when (ex.SqlState == PostgresErrorCodes.SerializationFailure ||
+                  ex.SqlState == PostgresErrorCodes.DeadlockDetected)
         {
-            // DatabaseErrors разворачивает DbUpdateException, которым EF оборачивает
-            // ошибки 40001/40P01: раньше такие конфликты уходили клиенту как 500.
-            await transaction.RollbackQuietlyAsync();
+            await transaction.RollbackAsync(cancellationToken);
 
             return (false, 409,
                 "A concurrent purchase changed the data. Please retry.", null, null);
@@ -297,70 +288,50 @@ public sealed class OrderService : IOrderService
             return (false, 400, "Unsupported target status.", null);
         }
 
-        // Целевой статус однозначно определяет ожидаемый текущий статус, поэтому
-        // переход выполняется одним условным UPDATE. Отдельных BEGIN/COMMIT и
-        // чтения перед записью больше нет: повторный или конкурентный запрос
-        // получает 0 изменённых строк вместо ошибки сериализации (40001).
-        OrderStatus? expectedStatus = newStatus switch
+        await using var transaction =
+            await _dbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+
+        var order = await _dbContext.Set<Order>()
+            .FirstOrDefaultAsync(
+                o => o.Id == orderId,
+                cancellationToken);
+
+        if (order is null)
         {
-            OrderStatus.Processing => OrderStatus.Paid,
-            OrderStatus.Ready => OrderStatus.Processing,
-            OrderStatus.Delivered => OrderStatus.Ready,
-            _ => null
+            return (false, 404, "Order was not found.", null);
+        }
+
+        var validTransition = (order.Status, newStatus) switch
+        {
+            (OrderStatus.Paid, OrderStatus.Processing) => true,
+            (OrderStatus.Processing, OrderStatus.Ready) => true,
+            (OrderStatus.Ready, OrderStatus.Delivered) => true,
+            _ => false
         };
 
-        if (expectedStatus is null)
+        if (!validTransition)
         {
-            // Переход в Paid не предусмотрен: сохраняем прежние ответы 404/409.
-            var currentStatus = await _dbContext.Set<Order>()
-                .AsNoTracking()
-                .Where(o => o.Id == orderId)
-                .Select(o => (OrderStatus?)o.Status)
-                .FirstOrDefaultAsync(cancellationToken);
-
-            return currentStatus is null
-                ? (false, 404, "Order was not found.", null)
-                : (false, 409, $"Cannot change order status from {currentStatus} to {newStatus}.", null);
+            return (
+                false,
+                409,
+                $"Cannot change order status from {order.Status} to {newStatus}.",
+                null);
         }
 
         var now = DateTime.UtcNow;
 
-        var query = _dbContext.Set<Order>()
-            .Where(o => o.Id == orderId && o.Status == expectedStatus.Value);
+        order.Status = newStatus;
+        order.UpdatedAt = now;
 
-        var updated = newStatus == OrderStatus.Processing
-            ? await query.ExecuteUpdateAsync(
-                setters => setters
-                    .SetProperty(o => o.Status, newStatus)
-                    .SetProperty(o => o.UpdatedAt, now)
-                    .SetProperty(o => o.ProcessedBy, employeeId),
-                cancellationToken)
-            : await query.ExecuteUpdateAsync(
-                setters => setters
-                    .SetProperty(o => o.Status, newStatus)
-                    .SetProperty(o => o.UpdatedAt, now),
-                cancellationToken);
+        if (newStatus == OrderStatus.Processing)
+            order.ProcessedBy = employeeId;
 
-        if (updated == 0)
-        {
-            var currentStatus = await _dbContext.Set<Order>()
-                .AsNoTracking()
-                .Where(o => o.Id == orderId)
-                .Select(o => (OrderStatus?)o.Status)
-                .FirstOrDefaultAsync(cancellationToken);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
-            return currentStatus is null
-                ? (false, 404, "Order was not found.", null)
-                : (false, 409, $"Cannot change order status from {currentStatus} to {newStatus}.", null);
-        }
-
-        var order = await _dbContext.Set<Order>()
-            .AsNoTracking()
-            .FirstOrDefaultAsync(o => o.Id == orderId, cancellationToken);
-
-        return order is null
-            ? (false, 404, "Order was not found.", null)
-            : (true, 200, null, order);
+        return (true, 200, null, order);
     }
 
     public async Task<(bool Success, int StatusCode, string? Error, Order? Data)>
@@ -397,31 +368,6 @@ public sealed class OrderService : IOrderService
                     409,
                     $"Cannot cancel order with status {order.Status}. Only paid orders can be cancelled.",
                     null);
-            }
-
-            // Отмена возвращает товар на склад, поэтому строки products блокируются
-            // до чтения остатка и в том же порядке, что и при оформлении заказа
-            // (ORDER BY id). Раньше остаток читался без блокировки и записывался
-            // после блокировки баланса: порядок блокировок не совпадал с checkout
-            // (риск взаимоблокировки), а запись опиралась на незаблокированное чтение.
-            var productIds = order.OrderItems
-                .Where(item => item.ProductId.HasValue)
-                .Select(item => item.ProductId!.Value)
-                .Distinct()
-                .OrderBy(id => id)
-                .ToArray();
-
-            if (productIds.Length > 0)
-            {
-                await _dbContext.Set<Product>()
-                    .FromSqlInterpolated($"""
-                        SELECT *
-                        FROM public.products
-                        WHERE id = ANY ({productIds})
-                        ORDER BY id
-                        FOR UPDATE
-                        """)
-                    .ToListAsync(cancellationToken);
             }
 
             var balance = await _dbContext.Balances
@@ -498,15 +444,13 @@ public sealed class OrderService : IOrderService
             await _dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
 
-            // Восстановленный остаток входит в кэшированный каталог: без сброса
-            // кэша витрина показывала бы старое количество до истечения TTL.
-            _cache.RemoveByPrefix(CacheKeys.ProductsPrefix);
-
             return (true, 200, null, order);
         }
-        catch (Exception ex) when (DatabaseErrors.IsRetryableConflict(ex))
+        catch (PostgresException ex)
+            when (ex.SqlState == PostgresErrorCodes.SerializationFailure ||
+                  ex.SqlState == PostgresErrorCodes.DeadlockDetected)
         {
-            await transaction.RollbackQuietlyAsync();
+            await transaction.RollbackAsync(cancellationToken);
 
             return (
                 false,
@@ -514,20 +458,5 @@ public sealed class OrderService : IOrderService
                 "A concurrent operation changed the data. Please retry.",
                 null);
         }
-    }
-
-    /// <summary>
-    /// Возвращает описание ачивки по коду из кэшированного справочника,
-    /// чтобы не выполнять отдельный запрос после выдачи награды.
-    /// </summary>
-    /// <param name="code">Код ачивки.</param>
-    /// <param name="cancellationToken">Токен отмены.</param>
-    private async Task<Achievement?> FindAchievementAsync(
-        string code,
-        CancellationToken cancellationToken)
-    {
-        var achievements = await _achievementService.GetAllAsync(cancellationToken);
-
-        return achievements.FirstOrDefault(a => a.Code == code);
     }
 }

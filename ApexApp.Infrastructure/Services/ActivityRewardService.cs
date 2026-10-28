@@ -102,71 +102,6 @@ public sealed class ActivityRewardService(
     }
 
     /// <inheritdoc />
-    public async Task<ServiceResult<ActivityRewardResult>> GrantQuestRewardAsync(
-        QuestRewardGrant grant,
-        CancellationToken cancellationToken = default)
-    {
-        if (grant.QuestParticipationId <= 0 || grant.UserId == Guid.Empty)
-        {
-            return ServiceResult<ActivityRewardResult>.Fail(
-                400,
-                "A valid quest participation and user ID are required.");
-        }
-
-        if (grant.RewardAmount < 0)
-        {
-            return ServiceResult<ActivityRewardResult>.Fail(
-                409,
-                "The quest has an invalid reward amount.");
-        }
-
-        return await ExecuteInTransactionAsync(
-            () => GrantClaimedQuestRewardAsync(grant, cancellationToken),
-            cancellationToken);
-    }
-
-    /// <summary>
-    /// Начисляет награду, факт выдачи которой вызывающий код уже зафиксировал атомарным
-    /// UPDATE участия (переход статуса вместе с <c>reward_claimed</c>), поэтому повторное
-    /// чтение участия, квеста и запись флага здесь не выполняются.
-    /// </summary>
-    /// <param name="grant">Пользователь, участие, сумма и название квеста.</param>
-    /// <param name="cancellationToken">Токен отмены.</param>
-    private async Task<ServiceResult<ActivityRewardResult>> GrantClaimedQuestRewardAsync(
-        QuestRewardGrant grant,
-        CancellationToken cancellationToken)
-    {
-        // Нулевая награда обрабатывается так же, как платная: флаг уже зафиксирован
-        // вызывающим кодом, но транзакция в ledger не создаётся.
-        if (grant.RewardAmount == 0)
-        {
-            return ServiceResult<ActivityRewardResult>.Ok(
-                new ActivityRewardResult(grant.UserId, 0, null, false));
-        }
-
-        // Пользователь известен из участия (внешний ключ), поэтому проверка его
-        // существования отдельным запросом не выполняется.
-        var credit = await rewardGranter.GrantForKnownUserAsync(
-            grant.UserId,
-            grant.RewardAmount,
-            $"Награда за квест \"{grant.QuestTitle}\"",
-            ActivityRewardEntityTypes.Quest,
-            grant.QuestParticipationId,
-            cancellationToken);
-
-        if (!credit.IsSuccess)
-        {
-            return ServiceResult<ActivityRewardResult>.Fail(credit.StatusCode, credit.Error!);
-        }
-
-        return ServiceResult<ActivityRewardResult>.Ok(new ActivityRewardResult(
-            grant.UserId,
-            grant.RewardAmount,
-            credit.Value!.Amount,
-            false));
-    }
-
-    /// <inheritdoc />
     public async Task<ServiceResult<ActivityRewardResult>> GrantEventRewardAsync(
         long eventParticipantId,
         CancellationToken cancellationToken = default)
@@ -223,7 +158,7 @@ public sealed class ActivityRewardService(
             return AlreadyGranted(participant.UserId);
         }
 
-        var credit = await rewardGranter.GrantForKnownUserAsync(
+        var credit = await rewardGranter.GrantAsync(
             participant.UserId,
             participant.Event.RewardAmount,
             $"Награда за мероприятие \"{participant.Event.Title}\"",

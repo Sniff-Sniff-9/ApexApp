@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using System.Net.Http.Json;
+using static Microsoft.EntityFrameworkCore.DbLoggerCategory.Database;
 using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
 
@@ -84,113 +85,52 @@ CancellationToken cancellationToken)
             return StatusCode(500, new { message = "Supabase configuration is missing." });
         }
 
-        var client = httpClientFactory.CreateClient(SupabaseHttpClient.Name);
+        var client = httpClientFactory.CreateClient();
 
-        client.DefaultRequestHeaders.TryAddWithoutValidation("apikey", supabaseKey);
+        client.DefaultRequestHeaders.Add("apikey", supabaseKey);
 
-        string content;
+        using var response = await client.PostAsJsonAsync(
+            $"{supabaseUrl.TrimEnd('/')}/auth/v1/token?grant_type=password",
+            new { email = request.Email, password = request.Password },
+            cancellationToken);
 
-        try
+        var content = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
         {
-            using var response = await client.PostAsJsonAsync(
-                $"{supabaseUrl.TrimEnd('/')}/auth/v1/token?grant_type=password",
-                new { email = request.Email, password = request.Password },
-                cancellationToken);
-
-            content = await response.Content.ReadAsStringAsync(cancellationToken);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                return Unauthorized(new { message = "Invalid email or password." });
-            }
-        }
-        catch (Exception exception) when (SupabaseHttpClient.IsUnavailable(exception, cancellationToken))
-        {
-            // Сетевой сбой или таймаут Supabase раньше возвращались клиенту как 500.
-            return StatusCode(503, new
-            {
-                message = "Authentication service is temporarily unavailable."
-            });
+            return Unauthorized(new { message = "Invalid email or password." });
         }
 
-        System.Text.Json.JsonDocument document;
+        using var document = System.Text.Json.JsonDocument.Parse(content);
+        var root = document.RootElement;
 
-        try
-        {
-            document = System.Text.Json.JsonDocument.Parse(content);
-        }
-        catch (System.Text.Json.JsonException)
+        using var userRequest = new HttpRequestMessage(
+    HttpMethod.Get,
+    $"{supabaseUrl.TrimEnd('/')}/auth/v1/user");
+
+        userRequest.Headers.TryAddWithoutValidation("apikey", supabaseKey);
+        userRequest.Headers.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue(
+                "Bearer",
+                root.GetProperty("access_token").GetString());
+
+        using var userResponse = await client.SendAsync(
+            userRequest, cancellationToken);
+
+        if (!userResponse.IsSuccessStatusCode)
         {
             return StatusCode(502, new
             {
-                message = "Supabase returned an unexpected response."
+                message = "Could not retrieve user from Supabase."
             });
         }
 
-        using var documentScope = document;
-        var root = documentScope.RootElement;
+        using var userDocument = System.Text.Json.JsonDocument.Parse(
+            await userResponse.Content.ReadAsStringAsync(cancellationToken));
 
-        if (!root.TryGetProperty("access_token", out var accessTokenElement) ||
-            string.IsNullOrWhiteSpace(accessTokenElement.GetString()))
-        {
-            return StatusCode(502, new
-            {
-                message = "Supabase returned an unexpected response."
-            });
-        }
-
-        var accessToken = accessTokenElement.GetString()!;
-
-        Guid userId;
-
-        try
-        {
-            using var userRequest = new HttpRequestMessage(
-                HttpMethod.Get,
-                $"{supabaseUrl.TrimEnd('/')}/auth/v1/user");
-
-            userRequest.Headers.TryAddWithoutValidation("apikey", supabaseKey);
-            userRequest.Headers.Authorization =
-                new System.Net.Http.Headers.AuthenticationHeaderValue(
-                    "Bearer", accessToken);
-
-            using var userResponse = await client.SendAsync(
-                userRequest, cancellationToken);
-
-            if (!userResponse.IsSuccessStatusCode)
-            {
-                return StatusCode(502, new
-                {
-                    message = "Could not retrieve user from Supabase."
-                });
-            }
-
-            using var userDocument = System.Text.Json.JsonDocument.Parse(
-                await userResponse.Content.ReadAsStringAsync(cancellationToken));
-
-            if (!userDocument.RootElement.TryGetProperty("id", out var idElement) ||
-                !Guid.TryParse(idElement.GetString(), out userId))
-            {
-                return StatusCode(502, new
-                {
-                    message = "Supabase returned an unexpected response."
-                });
-            }
-        }
-        catch (Exception exception) when (SupabaseHttpClient.IsUnavailable(exception, cancellationToken))
-        {
-            return StatusCode(503, new
-            {
-                message = "Authentication service is temporarily unavailable."
-            });
-        }
-        catch (System.Text.Json.JsonException)
-        {
-            return StatusCode(502, new
-            {
-                message = "Supabase returned an unexpected response."
-            });
-        }
+        var userId = userDocument.RootElement
+            .GetProperty("id")
+            .GetGuid();
 
         var user = await _dbContext.Users
             .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
@@ -211,22 +151,20 @@ CancellationToken cancellationToken)
         // LastLoginAt is part of the cached user directory entries.
         _cache.RemoveByPrefix(CacheKeys.UsersPrefix);
 
+        var accessToken = root.GetProperty("access_token").GetString()!;
+
         var jwt = new JwtSecurityTokenHandler().ReadJwtToken(accessToken);
 
         var userRole = jwt.Claims
             .FirstOrDefault(c => c.Type == "user_role")
             ?.Value;
 
+        Console.WriteLine($"User role from JWT: {userRole ?? "not found"}");
+
         return Ok(new LoginResponse(
             accessToken,
-            root.TryGetProperty("token_type", out var tokenType) &&
-                tokenType.GetString() is { Length: > 0 } tokenTypeValue
-                    ? tokenTypeValue
-                    : "bearer",
-            root.TryGetProperty("expires_in", out var expiresIn) &&
-                expiresIn.TryGetInt32(out var expiresInValue)
-                    ? expiresInValue
-                    : 0,
+            root.GetProperty("token_type").GetString()!,
+            root.GetProperty("expires_in").GetInt32(),
             root.TryGetProperty("refresh_token", out var refreshToken)
                 ? refreshToken.GetString()
                 : null,
@@ -272,33 +210,22 @@ CancellationToken cancellationToken)
             });
         }
 
-        var client = _httpClientFactory.CreateClient(SupabaseHttpClient.Name);
+        var client = _httpClientFactory.CreateClient();
         client.DefaultRequestHeaders.TryAddWithoutValidation("apikey", anonKey);
         client.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue(
                 "Bearer", accessToken);
 
-        try
-        {
-            using var response = await client.PutAsJsonAsync(
-                $"{supabaseUrl.TrimEnd('/')}/auth/v1/user",
-                new { password = request.NewPassword },
-                cancellationToken);
+        using var response = await client.PutAsJsonAsync(
+            $"{supabaseUrl.TrimEnd('/')}/auth/v1/user",
+            new { password = request.NewPassword },
+            cancellationToken);
 
-            if (!response.IsSuccessStatusCode)
-            {
-                return BadRequest(new
-                {
-                    message = "Supabase could not update the password."
-                });
-            }
-        }
-        catch (Exception exception) when (SupabaseHttpClient.IsUnavailable(exception, cancellationToken))
+        if (!response.IsSuccessStatusCode)
         {
-            // Недоступность Supabase — ошибка внешнего сервиса, а не клиента и не 500.
-            return StatusCode(503, new
+            return BadRequest(new
             {
-                message = "Authentication service is temporarily unavailable."
+                message = "Supabase could not update the password."
             });
         }
 

@@ -4,7 +4,6 @@ using ApexApp.Api.Diagnostics;
 using ApexApp.Api.Swagger;
 using ApexApp.Infrastructure.Auth;
 using ApexApp.Infrastructure.Caching;
-using ApexApp.Infrastructure.Common;
 using ApexApp.Infrastructure.Data;
 using ApexApp.Infrastructure.Repositories;
 using ApexApp.Infrastructure.Services;
@@ -145,15 +144,13 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-// Supabase — внешний HTTP-сервис: ограниченный таймаут не должен превращать
-// недоступность провайдера в запрос, висящий 100 секунд (значение по умолчанию).
-builder.Services.AddHttpClient(SupabaseHttpClient.Name, client =>
-{
-    client.Timeout = SupabaseHttpClient.Timeout;
-});
+builder.Services.AddHttpClient();
 
-// Настройка политик авторизации: проверка аутентификации пользователя,
-// его активности и наличия ролей для доступа к функционалу приложения.
+/// <summary>
+/// Настройка политики авторизации для приложения. Определяются различные политики, 
+/// которые проверяют аутентификацию пользователя, его активность и наличие определенных 
+/// ролей для доступа к различным функциональным возможностям приложения.
+/// </summary>
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy(AppPolicies.ActiveUser, policy =>
