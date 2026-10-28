@@ -212,7 +212,7 @@ builder.Services.AddAuthorization(options =>
     {
         policy.RequireAuthenticatedUser();
         policy.AddRequirements(new ActiveUserRequirement());
-        policy.AddRequirements(new AnyRoleRequirement(RoleCodes.Admin, RoleCodes.SuperAdmin));
+        policy.AddRequirements(new AnyRoleRequirement(RoleCodes.Admin, RoleCodes.SuperAdmin, RoleCodes.Support));
     });
 
     options.AddPolicy(AppPolicies.ManageOrders, policy =>
