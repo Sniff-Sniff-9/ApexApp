@@ -1,6 +1,7 @@
 ﻿using System.Data;
 using ApexApp.Domain.Entities;
 using ApexApp.Infrastructure.Caching;
+using ApexApp.Infrastructure.Common;
 using ApexApp.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -161,7 +162,7 @@ public sealed class AchievementService(
 
         if (alreadyEarned)
         {
-            await transaction.RollbackAsync(cancellationToken);
+            await transaction.RollbackQuietlyAsync();
             return false;
         }
 

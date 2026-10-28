@@ -149,11 +149,14 @@ public sealed class UserProfileService : IUserProfileService
         UpdateOwnProfileCommand command,
         CancellationToken cancellationToken)
     {
-        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
-        if (user is null)
+        var row = await LoadUserWithRolesAsync(userId, cancellationToken);
+
+        if (row is null)
         {
             return ServiceResult<CurrentUserProfile>.Fail(404, "User profile was not found.");
         }
+
+        var user = row.Value.User;
 
         var validationError = ApplyOwnProfileChanges(user, command);
         if (validationError is not null)
@@ -166,8 +169,8 @@ public sealed class UserProfileService : IUserProfileService
 
         _cache.RemoveByPrefix(CacheKeys.UsersPrefix);
 
-        var profile = await GetCurrentAsync(userId, cancellationToken);
-        return ServiceResult<CurrentUserProfile>.Ok(profile!);
+        // Роли получены первым запросом, поэтому ответ собирается без чтения БД.
+        return ServiceResult<CurrentUserProfile>.Ok(Map(user, row.Value.Roles));
     }
 
     public async Task<ServiceResult<CurrentUserProfile>> AdminUpdateAsync(
@@ -175,11 +178,14 @@ public sealed class UserProfileService : IUserProfileService
         AdminUpdateUserCommand command,
         CancellationToken cancellationToken)
     {
-        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == targetUserId, cancellationToken);
-        if (user is null)
+        var row = await LoadUserWithRolesAsync(targetUserId, cancellationToken);
+
+        if (row is null)
         {
             return ServiceResult<CurrentUserProfile>.Fail(404, "User profile was not found.");
         }
+
+        var user = row.Value.User;
 
         var validationError = ApplyAdminProfileChanges(user, command);
         if (validationError is not null)
@@ -192,8 +198,56 @@ public sealed class UserProfileService : IUserProfileService
 
         _cache.RemoveByPrefix(CacheKeys.UsersPrefix);
 
-        var profile = await GetCurrentAsync(targetUserId, cancellationToken);
-        return ServiceResult<CurrentUserProfile>.Ok(profile!);
+        // Роли получены первым запросом, поэтому ответ собирается без чтения БД.
+        return ServiceResult<CurrentUserProfile>.Ok(Map(user, row.Value.Roles));
+    }
+
+    /// <inheritdoc />
+    public CurrentUserProfile BuildProfile(
+        User user,
+        IEnumerable<string> roleCodes)
+    {
+        return Map(user, roleCodes.Distinct().OrderBy(code => code).ToList());
+    }
+
+    /// <summary>
+    /// Загружает пользователя вместе с кодами его ролей одним запросом.
+    /// Пользователь остаётся отслеживаемым, поэтому последующий SaveChanges
+    /// запишет изменения профиля, а роли попадают в ответ без второго чтения.
+    /// </summary>
+    /// <param name="userId">Идентификатор пользователя.</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    /// <returns>Пользователь и его роли или <c>null</c>, если пользователь не найден.</returns>
+    private async Task<(User User, List<string> Roles)?> LoadUserWithRolesAsync(
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        var row = await _dbContext.Users
+            .Where(user => user.Id == userId)
+            .Select(user => new
+            {
+                User = user,
+                Roles = _dbContext.UserRoles
+                    .Where(userRole => userRole.UserId == user.Id)
+                    .Select(userRole => userRole.Role.Code)
+                    .Distinct()
+                    .OrderBy(code => code)
+                    .ToList()
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (row is null)
+        {
+            return null;
+        }
+
+        if (_dbContext.Entry(row.User).State == EntityState.Detached)
+        {
+            // Страховка: без отслеживания изменения профиля не попали бы в SaveChanges.
+            _dbContext.Users.Attach(row.User);
+        }
+
+        return (row.User, row.Roles);
     }
 
     private async Task<Dictionary<Guid, List<string>>> LoadRolesAsync(
@@ -354,25 +408,38 @@ public sealed class UserProfileService : IUserProfileService
                 400, "Required employee fields are missing.");
         }
 
-        var client = _httpClientFactory.CreateClient();
+        var client = _httpClientFactory.CreateClient(SupabaseHttpClient.Name);
         client.DefaultRequestHeaders.TryAddWithoutValidation("apikey", anonKey);
 
-        using var response = await client.PostAsJsonAsync(
-    $"{supabaseUrl.TrimEnd('/')}/auth/v1/signup",
-    new
-    {
-        email,
-        password,
-        data = new
+        HttpResponseMessage response;
+
+        try
         {
-            first_name = command.FirstName.Trim(),
-            last_name = command.LastName.Trim(),
-            middle_name = command.MiddleName?.Trim(),
-            department = command.Department.Trim(),
-            position = command.Position.Trim()
+            response = await client.PostAsJsonAsync(
+                $"{supabaseUrl.TrimEnd('/')}/auth/v1/signup",
+                new
+                {
+                    email,
+                    password,
+                    data = new
+                    {
+                        first_name = command.FirstName.Trim(),
+                        last_name = command.LastName.Trim(),
+                        middle_name = command.MiddleName?.Trim(),
+                        department = command.Department.Trim(),
+                        position = command.Position.Trim()
+                    }
+                },
+                cancellationToken);
         }
-    },
-    cancellationToken);
+        catch (Exception exception) when (SupabaseHttpClient.IsUnavailable(exception, cancellationToken))
+        {
+            // Supabase недоступен: это ошибка внешнего сервиса, а не 500.
+            return ServiceResult<CurrentUserProfile>.Fail(
+                503, "Authentication service is temporarily unavailable.");
+        }
+
+        using var responseScope = response;
 
         if (!response.IsSuccessStatusCode)
         {
@@ -402,15 +469,16 @@ public sealed class UserProfileService : IUserProfileService
                 502, "Supabase did not return a valid user ID.");
         }
 
-        var user = await _dbContext.Users
-            .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+        var row = await LoadUserWithRolesAsync(userId, cancellationToken);
 
-        if (user is null)
+        if (row is null)
         {
             return ServiceResult<CurrentUserProfile>.Fail(
                 500,
                 "User profile was not created by the Supabase trigger.");
         }
+
+        var user = row.Value.User;
 
         user.FirstName = command.FirstName.Trim();
         user.LastName = command.LastName.Trim();
@@ -428,9 +496,6 @@ public sealed class UserProfileService : IUserProfileService
 
         _cache.RemoveByPrefix(CacheKeys.UsersPrefix);
 
-        var profile = await GetByIdAsync(
-            userId, includeInactive: true, cancellationToken);
-
-        return ServiceResult<CurrentUserProfile>.Ok(profile!);
+        return ServiceResult<CurrentUserProfile>.Ok(Map(user, row.Value.Roles));
     }
 }

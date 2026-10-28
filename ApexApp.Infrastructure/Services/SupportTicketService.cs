@@ -215,16 +215,29 @@ public sealed class SupportTicketService(AppDbContext dbContext) : ISupportTicke
             return ServiceResult<SupportMessageItem>.Fail(400, messageError);
         }
 
-        var ticket = await dbContext.SupportTickets
-            .FirstOrDefaultAsync(
-                ticket => ticket.Id == ticketId
-                          && (canManage || ticket.UserId == userId),
-                cancellationToken);
+        // Обращение и ФИО автора читаются одним запросом: отдельное чтение пользователя
+        // после SaveChanges больше не выполняется.
+        var row = await (
+                from supportTicket in dbContext.SupportTickets
+                where supportTicket.Id == ticketId
+                      && (canManage || supportTicket.UserId == userId)
+                join author in dbContext.Users on userId equals author.Id into authors
+                from author in authors.DefaultIfEmpty()
+                select new
+                {
+                    Ticket = supportTicket,
+                    AuthorFirstName = author.FirstName,
+                    AuthorLastName = author.LastName,
+                    AuthorMiddleName = author.MiddleName
+                })
+            .FirstOrDefaultAsync(cancellationToken);
 
-        if (ticket is null)
+        if (row is null)
         {
             return ServiceResult<SupportMessageItem>.Fail(404, "Support ticket was not found.");
         }
+
+        var ticket = row.Ticket;
 
         var now = DateTime.UtcNow;
 
@@ -242,23 +255,12 @@ public sealed class SupportTicketService(AppDbContext dbContext) : ISupportTicke
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        var author = await dbContext.Users
-            .AsNoTracking()
-            .Where(user => user.Id == userId)
-            .Select(user => new
-            {
-                user.FirstName,
-                user.LastName,
-                user.MiddleName
-            })
-            .FirstOrDefaultAsync(cancellationToken);
-
         return ServiceResult<SupportMessageItem>.Ok(new SupportMessageItem(
             entity.Id,
             entity.UserId,
-            author?.FirstName ?? string.Empty,
-            author?.LastName ?? string.Empty,
-            author?.MiddleName,
+            row.AuthorFirstName ?? string.Empty,
+            row.AuthorLastName ?? string.Empty,
+            row.AuthorMiddleName,
             entity.Message,
             entity.CreatedAt));
     }
@@ -281,22 +283,24 @@ public sealed class SupportTicketService(AppDbContext dbContext) : ISupportTicke
             return ServiceResult<SupportTicketDetails>.Fail(400, "Invalid ticket status.");
         }
 
-        var ticket = await dbContext.SupportTickets
-            .FirstOrDefaultAsync(
-                ticket => ticket.Id == ticketId,
+        var updatedAt = DateTime.UtcNow;
+
+        // Статус и отметка времени пишутся условным UPDATE:
+        // отдельное чтение обращения перед изменением больше не требуется.
+        var updated = await dbContext.SupportTickets
+            .Where(ticket => ticket.Id == ticketId)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(ticket => ticket.Status, status)
+                    .SetProperty(ticket => ticket.UpdatedAt, updatedAt),
                 cancellationToken);
 
-        if (ticket is null)
+        if (updated == 0)
         {
             return ServiceResult<SupportTicketDetails>.Fail(404, "Support ticket was not found.");
         }
 
-        ticket.Status = status;
-        ticket.UpdatedAt = DateTime.UtcNow;
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        var details = await LoadDetailsAsync(ticket.Id, ownerId: null, cancellationToken);
+        var details = await LoadDetailsAsync(ticketId, ownerId: null, cancellationToken);
 
         return details is null
             ? ServiceResult<SupportTicketDetails>.Fail(404, "Support ticket was not found.")
@@ -327,32 +331,32 @@ public sealed class SupportTicketService(AppDbContext dbContext) : ISupportTicke
         {
             var assigneeGuid = assigneeId.Value;
 
-            var isActive = await dbContext.Users
+            // Активность и членство в поддержке проверяются одним запросом.
+            var assignee = await dbContext.Users
                 .AsNoTracking()
                 .Where(user => user.Id == assigneeGuid)
-                .Select(user => (bool?)user.IsActive)
+                .Select(user => new
+                {
+                    user.IsActive,
+                    IsSupportStaff = dbContext.UserRoles.Any(userRole =>
+                        userRole.UserId == assigneeGuid
+                        && AssigneeRoleCodes.Contains(userRole.Role.Code))
+                })
                 .FirstOrDefaultAsync(cancellationToken);
 
-            if (isActive is null)
+            if (assignee is null)
             {
                 return ServiceResult<SupportTicketDetails>.Fail(404, "Assignee was not found.");
             }
 
-            if (!isActive.Value)
+            if (!assignee.IsActive)
             {
                 return ServiceResult<SupportTicketDetails>.Fail(
                     400,
                     "Assignee must be an active user.");
             }
 
-            var isSupportStaff = await dbContext.UserRoles
-                .AsNoTracking()
-                .AnyAsync(
-                    userRole => userRole.UserId == assigneeGuid
-                                && AssigneeRoleCodes.Contains(userRole.Role.Code),
-                    cancellationToken);
-
-            if (!isSupportStaff)
+            if (!assignee.IsSupportStaff)
             {
                 return ServiceResult<SupportTicketDetails>.Fail(
                     400,
@@ -360,22 +364,24 @@ public sealed class SupportTicketService(AppDbContext dbContext) : ISupportTicke
             }
         }
 
-        var ticket = await dbContext.SupportTickets
-            .FirstOrDefaultAsync(
-                ticket => ticket.Id == ticketId,
+        var updatedAt = DateTime.UtcNow;
+
+        // Ответственный записывается условным UPDATE:
+        // отдельное чтение обращения перед изменением больше не требуется.
+        var updated = await dbContext.SupportTickets
+            .Where(ticket => ticket.Id == ticketId)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(ticket => ticket.AssignedTo, assigneeId)
+                    .SetProperty(ticket => ticket.UpdatedAt, updatedAt),
                 cancellationToken);
 
-        if (ticket is null)
+        if (updated == 0)
         {
             return ServiceResult<SupportTicketDetails>.Fail(404, "Support ticket was not found.");
         }
 
-        ticket.AssignedTo = assigneeId;
-        ticket.UpdatedAt = DateTime.UtcNow;
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        var details = await LoadDetailsAsync(ticket.Id, ownerId: null, cancellationToken);
+        var details = await LoadDetailsAsync(ticketId, ownerId: null, cancellationToken);
 
         return details is null
             ? ServiceResult<SupportTicketDetails>.Fail(404, "Support ticket was not found.")

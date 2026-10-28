@@ -279,16 +279,21 @@ public sealed class SurveyService : ISurveyService
 
         try
         {
-            var alreadyResponded = await dbContext.SurveyResponses
-                .AnyAsync(
-                    item => item.SurveyId == surveyId && item.UserId == userId,
-                    cancellationToken);
-
-            if (alreadyResponded && !survey.AllowMultipleResponses)
+            // Проверка дубля нужна только для опросов с одним ответом:
+            // при разрешённых повторных ответах её результат не используется.
+            if (!survey.AllowMultipleResponses)
             {
-                return ServiceResult<SurveySubmissionResult>.Fail(
-                    409,
-                    "You have already responded to this survey.");
+                var alreadyResponded = await dbContext.SurveyResponses
+                    .AnyAsync(
+                        item => item.SurveyId == surveyId && item.UserId == userId,
+                        cancellationToken);
+
+                if (alreadyResponded)
+                {
+                    return ServiceResult<SurveySubmissionResult>.Fail(
+                        409,
+                        "You have already responded to this survey.");
+                }
             }
 
             var now = DateTime.UtcNow;
@@ -319,7 +324,7 @@ public sealed class SurveyService : ISurveyService
             // Начисляем награду после сохранения ответа, чтобы response.Id уже был известен.
             if (survey.RewardAmount > 0)
             {
-                var credit = await activityRewardGranter.GrantAsync(
+                var credit = await activityRewardGranter.GrantForKnownUserAsync(
                     userId,
                     survey.RewardAmount,
                     $"Награда за прохождение анкеты \"{survey.Title}\"",
@@ -329,7 +334,7 @@ public sealed class SurveyService : ISurveyService
 
                 if (!credit.IsSuccess)
                 {
-                    await databaseTransaction.RollbackAsync(cancellationToken);
+                    await databaseTransaction.RollbackQuietlyAsync();
 
                     return ServiceResult<SurveySubmissionResult>.Fail(
                         credit.StatusCode,
@@ -343,7 +348,7 @@ public sealed class SurveyService : ISurveyService
         }
         catch (DbUpdateException exception) when (DatabaseErrors.IsUniqueViolation(exception))
         {
-            await databaseTransaction.RollbackAsync(cancellationToken);
+            await databaseTransaction.RollbackQuietlyAsync();
 
             if (response is not null)
             {
@@ -356,7 +361,7 @@ public sealed class SurveyService : ISurveyService
         }
         catch (Exception exception) when (DatabaseErrors.IsRetryableConflict(exception))
         {
-            await databaseTransaction.RollbackAsync(cancellationToken);
+            await databaseTransaction.RollbackQuietlyAsync();
 
             return ServiceResult<SurveySubmissionResult>.Fail(
                 409,
