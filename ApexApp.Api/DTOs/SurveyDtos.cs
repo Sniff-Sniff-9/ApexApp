@@ -25,6 +25,7 @@ namespace ApexApp.Api.DTOs
         int QuestionsCount,
         bool HasResponded,
         bool CanRespond,
+        long RewardAmount,
         DateTime? LastSubmittedAt);
 
     /// <summary>
@@ -116,6 +117,7 @@ namespace ApexApp.Api.DTOs
         bool AllowMultipleResponses,
         int QuestionsCount,
         int ResponsesCount,
+        long RewardAmount,
         Guid? CreatedBy,
         DateTime CreatedAt,
         DateTime UpdatedAt);

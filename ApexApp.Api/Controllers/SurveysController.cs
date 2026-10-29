@@ -581,6 +581,7 @@ public sealed class SurveysController(ISurveyService surveyService) : ApiControl
             summary.QuestionsCount,
             summary.HasResponded,
             summary.CanRespond,
+            summary.Survey.RewardAmount,
             summary.LastSubmittedAt);
 
     private static SurveyDetailsDto ToDetailsDto(SurveyDetailsResult details) =>
@@ -654,6 +655,7 @@ public sealed class SurveysController(ISurveyService surveyService) : ApiControl
             summary.Survey.AllowMultipleResponses,
             summary.QuestionsCount,
             summary.ResponsesCount,
+            summary.Survey.RewardAmount,
             summary.Survey.CreatedBy,
             summary.Survey.CreatedAt,
             summary.Survey.UpdatedAt);
@@ -669,6 +671,7 @@ public sealed class SurveysController(ISurveyService surveyService) : ApiControl
             survey.AllowMultipleResponses,
             0,
             0,
+            survey.RewardAmount,
             survey.CreatedBy,
             survey.CreatedAt,
             survey.UpdatedAt);
