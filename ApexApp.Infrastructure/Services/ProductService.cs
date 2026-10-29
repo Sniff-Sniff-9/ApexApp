@@ -160,4 +160,13 @@ public sealed class ProductService(
 
         return null;
     }
+
+    public async Task<List<Product>> GetAllAsync(
+    int? categoryId = null,
+    CancellationToken cancellationToken = default)
+    {
+        return await repository.GetAllAsync(
+            categoryId,
+            cancellationToken);
+    }
 }

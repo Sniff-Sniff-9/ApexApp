@@ -24,4 +24,8 @@ public interface IProductService
     Task<(bool Success, string? Error)> DeleteAsync(
         int id,
         CancellationToken cancellationToken = default);
+
+    Task<List<Product>> GetAllAsync(
+    int? categoryId = null,
+    CancellationToken cancellationToken = default);
 }

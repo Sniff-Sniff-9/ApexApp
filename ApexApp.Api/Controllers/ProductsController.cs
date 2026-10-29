@@ -199,7 +199,36 @@ public sealed class ProductsController : ApiControllerBase
             product.Stock,
             product.IsDigital,
             product.CreatedAt,
-            product.UpdatedAt
+            product.UpdatedAt,
+            product.IsActive
         };
+    }
+
+    /// <summary>
+    /// Получить все товары, включая неактивные.
+    /// </summary>
+    /// <response code="200">Список товаров успешно получен.</response>
+    /// <response code="400">Некорректный идентификатор категории.</response>
+    /// <response code="401">Пользователь не авторизован.</response>
+    /// <response code="403">Недостаточно прав.</response>
+    [HttpGet("all")]
+    [Authorize(Policy = AppPolicies.ManageCatalog)]
+    public async Task<IActionResult> GetAllProducts(
+        [FromQuery] int? categoryId,
+        CancellationToken cancellationToken)
+    {
+        if (categoryId.HasValue && categoryId.Value <= 0)
+        {
+            return BadRequest(new
+            {
+                message = "Category ID must be positive."
+            });
+        }
+
+        var products = await _productService.GetAllAsync(
+            categoryId,
+            cancellationToken);
+
+        return Ok(products.Select(ToResponse));
     }
 }

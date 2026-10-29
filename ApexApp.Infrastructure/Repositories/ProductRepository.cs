@@ -69,4 +69,22 @@ public sealed class ProductRepository(
     {
         return dbContext.SaveChangesAsync(cancellationToken);
     }
+
+    public async Task<List<Product>> GetAllAsync(
+    int? categoryId = null,
+    CancellationToken cancellationToken = default)
+    {
+        var query = dbContext.Set<Product>()
+            .AsNoTracking()
+            .AsQueryable();
+
+        if (categoryId.HasValue)
+        {
+            query = query.Where(p => p.CategoryId == categoryId.Value);
+        }
+
+        return await query
+            .OrderBy(p => p.Name)
+            .ToListAsync(cancellationToken);
+    }
 }
