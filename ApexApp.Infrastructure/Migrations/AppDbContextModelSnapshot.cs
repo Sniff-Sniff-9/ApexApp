@@ -158,6 +158,10 @@ namespace ApexApp.Infrastructure.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("product_id");
 
+                    b.Property<int?>("ProductVariantId")
+                        .HasColumnType("integer")
+                        .HasColumnName("product_variant_id");
+
                     b.Property<int>("Quantity")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
@@ -172,6 +176,8 @@ namespace ApexApp.Infrastructure.Migrations
                         .HasName("cart_items_pkey");
 
                     b.HasIndex("ProductId");
+
+                    b.HasIndex("ProductVariantId");
 
                     b.HasIndex(new[] { "UserId", "ProductId" }, "cart_items_user_id_product_id_key")
                         .IsUnique();
@@ -204,6 +210,43 @@ namespace ApexApp.Infrastructure.Migrations
                         .HasName("categories_pkey");
 
                     b.ToTable("categories", (string)null);
+                });
+
+            modelBuilder.Entity("ApexApp.Domain.Entities.Department", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("description");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<int?>("ParentDepartmentId")
+                        .HasColumnType("integer")
+                        .HasColumnName("parent_department_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ParentDepartmentId");
+
+                    b.ToTable("departments", "public");
                 });
 
             modelBuilder.Entity("ApexApp.Domain.Entities.Event", b =>
@@ -405,6 +448,10 @@ namespace ApexApp.Infrastructure.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("product_id");
 
+                    b.Property<int?>("ProductVariantId")
+                        .HasColumnType("integer")
+                        .HasColumnName("product_variant_id");
+
                     b.Property<int>("Quantity")
                         .HasColumnType("integer")
                         .HasColumnName("quantity");
@@ -414,9 +461,42 @@ namespace ApexApp.Infrastructure.Migrations
 
                     b.HasIndex("ProductId");
 
+                    b.HasIndex("ProductVariantId");
+
                     b.HasIndex(new[] { "OrderId" }, "idx_order_items_order");
 
                     b.ToTable("order_items", (string)null);
+                });
+
+            modelBuilder.Entity("ApexApp.Domain.Entities.Position", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("description");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("positions", (string)null);
                 });
 
             modelBuilder.Entity("ApexApp.Domain.Entities.Product", b =>
@@ -484,6 +564,57 @@ namespace ApexApp.Infrastructure.Migrations
                     b.HasIndex(new[] { "CategoryId" }, "idx_products_category");
 
                     b.ToTable("products", (string)null);
+                });
+
+            modelBuilder.Entity("ApexApp.Domain.Entities.ProductVariant", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("description");
+
+                    b.Property<string>("ImageUrl")
+                        .HasColumnType("text")
+                        .HasColumnName("image_url");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<long?>("Price")
+                        .HasColumnType("bigint")
+                        .HasColumnName("price");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("integer")
+                        .HasColumnName("product_id");
+
+                    b.Property<int>("Stock")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("stock");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("product_variants", "public");
                 });
 
             modelBuilder.Entity("ApexApp.Domain.Entities.Quest", b =>
@@ -1228,10 +1359,9 @@ namespace ApexApp.Infrastructure.Migrations
                         .HasColumnName("created_at")
                         .HasDefaultValueSql("now()");
 
-                    b.Property<string>("Department")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("department");
+                    b.Property<int?>("DepartmentId")
+                        .HasColumnType("integer")
+                        .HasColumnName("department_id");
 
                     b.Property<string>("FirstName")
                         .IsRequired()
@@ -1266,10 +1396,9 @@ namespace ApexApp.Infrastructure.Migrations
                         .HasDefaultValue(true)
                         .HasColumnName("must_change_password");
 
-                    b.Property<string>("Position")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("position");
+                    b.Property<int?>("PositionId")
+                        .HasColumnType("integer")
+                        .HasColumnName("position_id");
 
                     b.Property<DateTime>("UpdatedAt")
                         .ValueGeneratedOnAdd()
@@ -1279,6 +1408,10 @@ namespace ApexApp.Infrastructure.Migrations
 
                     b.HasKey("Id")
                         .HasName("users_pkey");
+
+                    b.HasIndex("DepartmentId");
+
+                    b.HasIndex("PositionId");
 
                     b.ToTable("users", (string)null);
                 });
@@ -1361,6 +1494,11 @@ namespace ApexApp.Infrastructure.Migrations
                         .IsRequired()
                         .HasConstraintName("cart_items_product_id_fkey");
 
+                    b.HasOne("ApexApp.Domain.Entities.ProductVariant", "ProductVariant")
+                        .WithMany()
+                        .HasForeignKey("ProductVariantId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("ApexApp.Domain.Entities.User", "User")
                         .WithMany("CartItems")
                         .HasForeignKey("UserId")
@@ -1370,7 +1508,19 @@ namespace ApexApp.Infrastructure.Migrations
 
                     b.Navigation("Product");
 
+                    b.Navigation("ProductVariant");
+
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("ApexApp.Domain.Entities.Department", b =>
+                {
+                    b.HasOne("ApexApp.Domain.Entities.Department", "ParentDepartment")
+                        .WithMany("ChildDepartments")
+                        .HasForeignKey("ParentDepartmentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("ParentDepartment");
                 });
 
             modelBuilder.Entity("ApexApp.Domain.Entities.Event", b =>
@@ -1440,9 +1590,16 @@ namespace ApexApp.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.SetNull)
                         .HasConstraintName("order_items_product_id_fkey");
 
+                    b.HasOne("ApexApp.Domain.Entities.ProductVariant", "ProductVariant")
+                        .WithMany()
+                        .HasForeignKey("ProductVariantId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Order");
 
                     b.Navigation("Product");
+
+                    b.Navigation("ProductVariant");
                 });
 
             modelBuilder.Entity("ApexApp.Domain.Entities.Product", b =>
@@ -1454,6 +1611,17 @@ namespace ApexApp.Infrastructure.Migrations
                         .HasConstraintName("products_category_id_fkey");
 
                     b.Navigation("Category");
+                });
+
+            modelBuilder.Entity("ApexApp.Domain.Entities.ProductVariant", b =>
+                {
+                    b.HasOne("ApexApp.Domain.Entities.Product", "Product")
+                        .WithMany("ProductVariants")
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Product");
                 });
 
             modelBuilder.Entity("ApexApp.Domain.Entities.Quest", b =>
@@ -1695,6 +1863,23 @@ namespace ApexApp.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("ApexApp.Domain.Entities.User", b =>
+                {
+                    b.HasOne("ApexApp.Domain.Entities.Department", "Department")
+                        .WithMany("Users")
+                        .HasForeignKey("DepartmentId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("ApexApp.Domain.Entities.Position", "Position")
+                        .WithMany("Users")
+                        .HasForeignKey("PositionId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Department");
+
+                    b.Navigation("Position");
+                });
+
             modelBuilder.Entity("ApexApp.Domain.Entities.UserAchievement", b =>
                 {
                     b.HasOne("ApexApp.Domain.Entities.Achievement", "Achievement")
@@ -1736,6 +1921,13 @@ namespace ApexApp.Infrastructure.Migrations
                     b.Navigation("Products");
                 });
 
+            modelBuilder.Entity("ApexApp.Domain.Entities.Department", b =>
+                {
+                    b.Navigation("ChildDepartments");
+
+                    b.Navigation("Users");
+                });
+
             modelBuilder.Entity("ApexApp.Domain.Entities.Event", b =>
                 {
                     b.Navigation("EventParticipants");
@@ -1746,11 +1938,18 @@ namespace ApexApp.Infrastructure.Migrations
                     b.Navigation("OrderItems");
                 });
 
+            modelBuilder.Entity("ApexApp.Domain.Entities.Position", b =>
+                {
+                    b.Navigation("Users");
+                });
+
             modelBuilder.Entity("ApexApp.Domain.Entities.Product", b =>
                 {
                     b.Navigation("CartItems");
 
                     b.Navigation("OrderItems");
+
+                    b.Navigation("ProductVariants");
                 });
 
             modelBuilder.Entity("ApexApp.Domain.Entities.Quest", b =>

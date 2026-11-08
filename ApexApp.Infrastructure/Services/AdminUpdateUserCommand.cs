@@ -10,9 +10,9 @@ public sealed class AdminUpdateUserCommand
 
     public string? AvatarUrl { get; init; }
 
-    public string? Department { get; init; }
+    public int? DepartmentId { get; init; }
 
-    public string? Position { get; init; }
+    public int? PositionId { get; init; }
 
     public bool? IsActive { get; init; }
 }

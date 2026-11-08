@@ -20,4 +20,8 @@ public partial class OrderItem
     public virtual Order Order { get; set; } = null!;
 
     public virtual Product? Product { get; set; }
+
+    public int? ProductVariantId { get; set; }
+
+    public virtual ProductVariant? ProductVariant { get; set; }
 }

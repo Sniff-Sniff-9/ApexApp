@@ -43,7 +43,7 @@ public sealed class UserProfileService : IUserProfileService
     {
         var manager = await _dbContext.Users
             .AsNoTracking()
-            .Where(user => user.Id == managerId)
+            .Where(user => user.Id == managerId).Include(u => u.Department).Include(u => u.Position)    
             .Select(user => new { user.Department })
             .SingleOrDefaultAsync(cancellationToken);
 
@@ -53,7 +53,7 @@ public sealed class UserProfileService : IUserProfileService
         }
 
         // Keyed by department name: the payload does not depend on the caller.
-        var cacheKey = CacheKeys.DepartmentUsers(manager.Department);
+        var cacheKey = CacheKeys.DepartmentUsers(manager.Department?.Name ?? "None");
 
         if (_cache.TryGet<IReadOnlyList<CurrentUserProfile>>(cacheKey, out var cached) &&
             cached is not null)
@@ -62,8 +62,8 @@ public sealed class UserProfileService : IUserProfileService
         }
 
         var users = await _dbContext.Users
-            .AsNoTracking()
-            .Where(user => user.Department == manager.Department)
+            .AsNoTracking().Include(u => u.Department).Include(u => u.Position)
+            .Where(user => user.Department.Id == manager.Department.Id)
             .OrderBy(user => user.LastName)
             .ThenBy(user => user.FirstName)
             .ToListAsync(cancellationToken);
@@ -227,8 +227,8 @@ public sealed class UserProfileService : IUserProfileService
             LastName = user.LastName,
             MiddleName = user.MiddleName,
             AvatarUrl = user.AvatarUrl,
-            Department = user.Department,
-            Position = user.Position,
+            Department = user.Department?.Name ?? "None",
+            Position = user.Position?.Name ?? "None",
             IsActive = user.IsActive,
             LastLoginAt = user.LastLoginAt,
             CreatedAt = user.CreatedAt,
@@ -296,26 +296,26 @@ public sealed class UserProfileService : IUserProfileService
             return ownProfileError;
         }
 
-        if (command.Department is not null)
+        if (command.DepartmentId is not null)
         {
-            var department = command.Department.Trim();
-            if (department.Length == 0)
+            var department = command.DepartmentId;
+            if (department is null)
             {
-                return "Department is required.";
+                return "Invalid department.";
             }
 
-            user.Department = department;
+            user.DepartmentId = department;
         }
 
-        if (command.Position is not null)
+        if (command.PositionId is not null)
         {
-            var position = command.Position.Trim();
-            if (position.Length == 0)
+            var position = command.PositionId;
+            if (position is null)
             {
-                return "Position is required.";
+                return "Invalid position.";
             }
 
-            user.Position = position;
+            user.PositionId = position;
         }
 
         if (command.IsActive is not null)
@@ -347,8 +347,8 @@ public sealed class UserProfileService : IUserProfileService
             string.IsNullOrWhiteSpace(password) ||
             string.IsNullOrWhiteSpace(command.FirstName) ||
             string.IsNullOrWhiteSpace(command.LastName) ||
-            string.IsNullOrWhiteSpace(command.Department) ||
-            string.IsNullOrWhiteSpace(command.Position))
+            command.DepartmentId == 0 ||
+            command.PositionId == 0)
         {
             return ServiceResult<CurrentUserProfile>.Fail(
                 400, "Required employee fields are missing.");
@@ -368,8 +368,8 @@ public sealed class UserProfileService : IUserProfileService
             first_name = command.FirstName.Trim(),
             last_name = command.LastName.Trim(),
             middle_name = command.MiddleName?.Trim(),
-            department = command.Department.Trim(),
-            position = command.Position.Trim()
+            department_id = command.DepartmentId,
+            position_id = command.PositionId
         }
     },
     cancellationToken);
@@ -417,8 +417,8 @@ public sealed class UserProfileService : IUserProfileService
         user.MiddleName = string.IsNullOrWhiteSpace(command.MiddleName)
             ? null
             : command.MiddleName.Trim();
-        user.Department = command.Department.Trim();
-        user.Position = command.Position.Trim();
+        user.DepartmentId = command.DepartmentId;
+        user.PositionId = command.PositionId;
         user.IsActive = true;
         user.MustChangePassword = true;
         user.UpdatedAt = DateTime.UtcNow;

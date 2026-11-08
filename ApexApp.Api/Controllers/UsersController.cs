@@ -176,8 +176,8 @@ public sealed class UsersController : ApiControllerBase
                 LastName = request.LastName,
                 MiddleName = request.MiddleName,
                 AvatarUrl = request.AvatarUrl,
-                Department = request.Department,
-                Position = request.Position,
+                DepartmentId = request.DepartmentId,
+                PositionId = request.PositionId,
                 IsActive = request.IsActive
             },
             cancellationToken);

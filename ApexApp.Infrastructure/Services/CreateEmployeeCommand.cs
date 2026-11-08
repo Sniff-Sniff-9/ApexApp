@@ -7,6 +7,6 @@ public sealed record CreateEmployeeCommand
     public required string FirstName { get; init; }
     public required string LastName { get; init; }
     public string? MiddleName { get; init; }
-    public required string Department { get; init; }
-    public required string Position { get; init; }
+    public int? DepartmentId { get; init; }
+    public int? PositionId { get; init; }
 }

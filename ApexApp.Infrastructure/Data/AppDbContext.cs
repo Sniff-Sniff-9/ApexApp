@@ -64,6 +64,13 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<UserAchievement> UserAchievements { get; set; }
 
+    public virtual DbSet<ProductVariant> ProductVariants { get; set; }
+
+    public virtual DbSet<Department> Departments { get; set; }
+
+    public virtual DbSet<Position> Positions { get; set; }
+
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder
@@ -138,10 +145,16 @@ public partial class AppDbContext : DbContext
                 .HasDefaultValue(1)
                 .HasColumnName("quantity");
             entity.Property(e => e.UserId).HasColumnName("user_id");
+            entity.Property(e => e.ProductVariantId).HasColumnName("product_variant_id");
 
             entity.HasOne(d => d.Product).WithMany(p => p.CartItems)
                 .HasForeignKey(d => d.ProductId)
                 .HasConstraintName("cart_items_product_id_fkey");
+
+            entity.HasOne(d => d.ProductVariant)
+                .WithMany()
+                .HasForeignKey(d => d.ProductVariantId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(d => d.User).WithMany(p => p.CartItems)
                 .HasForeignKey(d => d.UserId)
@@ -285,10 +298,17 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.PriceAtPurchase).HasColumnName("price_at_purchase");
             entity.Property(e => e.ProductId).HasColumnName("product_id");
             entity.Property(e => e.Quantity).HasColumnName("quantity");
+            entity.Property(e => e.ProductVariantId).HasColumnName("product_variant_id");
+
 
             entity.HasOne(d => d.Order).WithMany(p => p.OrderItems)
                 .HasForeignKey(d => d.OrderId)
                 .HasConstraintName("order_items_order_id_fkey");
+
+            entity.HasOne(ci => ci.ProductVariant)
+                .WithMany()
+                .HasForeignKey(ci => ci.ProductVariantId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(d => d.Product).WithMany(p => p.OrderItems)
                 .HasForeignKey(d => d.ProductId)
@@ -812,7 +832,7 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("now()")
                 .HasColumnName("created_at");
-            entity.Property(e => e.Department).HasColumnName("department");
+            entity.Property(e => e.DepartmentId).HasColumnName("department_id");
             entity.Property(e => e.FirstName)
                 .HasMaxLength(100)
                 .HasColumnName("first_name");
@@ -829,7 +849,7 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.MiddleName)
                 .HasMaxLength(100)
                 .HasColumnName("middle_name");
-            entity.Property(e => e.Position).HasColumnName("position");
+            entity.Property(e => e.PositionId).HasColumnName("position_id");
             entity.Property(e => e.UpdatedAt)
                 .HasDefaultValueSql("now()")
                 .HasColumnName("updated_at");
@@ -937,6 +957,104 @@ public partial class AppDbContext : DbContext
                 .WithMany(e => e.UserAchievements)
                 .HasForeignKey(e => e.AchievementId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ProductVariant>(entity =>
+        {
+            entity.ToTable("product_variants", "public");
+
+            entity.HasKey(v => v.Id);
+
+            entity.Property(e => e.Id)
+                .UseIdentityByDefaultColumn()
+                .HasColumnName("id");
+
+            entity.Property(e => e.ProductId).IsRequired()
+                .HasColumnName("product_id");
+
+            entity.Property(v => v.Name)
+                .IsRequired()
+                .HasMaxLength(200).HasColumnName("name");
+
+            entity.Property(v => v.Description)
+                .HasMaxLength(1000).HasColumnName("description");
+
+            entity.Property(e => e.ImageUrl).HasColumnName("image_url");
+
+            entity.Property(v => v.Price).HasColumnName("price");
+
+            entity.Property(v => v.Stock).HasColumnName("stock")
+                .IsRequired()
+                .HasDefaultValue(0);
+
+            entity.Property(v => v.IsActive).HasColumnName("is_active")
+                .HasDefaultValue(true);
+
+            entity.HasOne(v => v.Product)
+                .WithMany(p => p.ProductVariants)
+                .HasForeignKey(v => v.ProductId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(v => v.ProductId);
+        });
+
+        modelBuilder.Entity<Department>(entity =>
+        {
+            entity.ToTable("departments", "public");
+
+            entity.HasKey(d => d.Id);
+
+            entity.Property(e => e.Id)
+                .UseIdentityByDefaultColumn()
+                .HasColumnName("id");
+
+            entity.Property(d => d.Name).HasColumnName("name")
+                .HasMaxLength(200)
+                .IsRequired();
+
+            entity.Property(d => d.Description).HasColumnName("description")
+                .HasMaxLength(1000);
+
+            entity.Property(d => d.ParentDepartmentId).HasColumnName("parent_department_id");
+            entity.Property(p => p.IsActive).HasColumnName("is_active")
+                .HasDefaultValue(true);
+
+            entity.HasOne(d => d.ParentDepartment)
+                .WithMany(d => d.ChildDepartments)
+                .HasForeignKey(d => d.ParentDepartmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasMany(d => d.Users)
+                .WithOne(e => e.Department)
+                .HasForeignKey(e => e.DepartmentId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+        });
+
+        modelBuilder.Entity<Position>(entity =>
+        {
+            entity.ToTable("positions");
+
+            entity.HasKey(p => p.Id);
+
+            entity.Property(e => e.Id)
+                .UseIdentityByDefaultColumn()
+                .HasColumnName("id");
+
+            entity.Property(d => d.Name).HasColumnName("name")
+               .HasMaxLength(200)
+               .IsRequired();
+
+            entity.Property(d => d.Description).HasColumnName("description")
+                .HasMaxLength(1000);
+
+            entity.Property(p => p.IsActive).HasColumnName("is_active")
+                .HasDefaultValue(true);
+
+            entity.HasMany(p => p.Users)
+                .WithOne(e => e.Position)
+                .HasForeignKey(e => e.PositionId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         OnModelCreatingPartial(modelBuilder);

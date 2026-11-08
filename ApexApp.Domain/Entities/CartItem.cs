@@ -18,4 +18,8 @@ public partial class CartItem
     public virtual Product Product { get; set; } = null!;
 
     public virtual User User { get; set; } = null!;
+
+    public int? ProductVariantId { get; set; }
+
+    public virtual ProductVariant? ProductVariant { get; set; }
 }

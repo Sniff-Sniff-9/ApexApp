@@ -15,9 +15,9 @@ public partial class User
 
     public string? AvatarUrl { get; set; }
 
-    public string Department { get; set; } = null!;
+    public int? DepartmentId { get; set; }
 
-    public string Position { get; set; } = null!;
+    public int? PositionId { get; set; }
 
     public bool IsActive { get; set; }
 
@@ -66,4 +66,8 @@ public partial class User
     public virtual ICollection<Transaction> TransactionRelatedUsers { get; set; } = new List<Transaction>();
 
     public virtual ICollection<Transaction> TransactionUsers { get; set; } = new List<Transaction>();
+
+    public virtual Department? Department { get; set; } = null!;
+
+    public virtual Position? Position { get; set; } = null!;
 }
