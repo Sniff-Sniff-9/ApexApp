@@ -93,7 +93,7 @@ public sealed class UserProfileService : IUserProfileService
             return cached;
         }
 
-        var query = _dbContext.Users.AsNoTracking();
+        var query = _dbContext.Users.Include(u => u.Department).Include(u => u.Position).AsNoTracking();
         if (!includeInactive)
         {
             query = query.Where(user => user.IsActive);
@@ -121,7 +121,7 @@ public sealed class UserProfileService : IUserProfileService
         bool includeInactive,
         CancellationToken cancellationToken)
     {
-        var query = _dbContext.Users.AsNoTracking().Where(user => user.Id == userId);
+        var query = _dbContext.Users.AsNoTracking().Include(u => u.Department).Include(u => u.Position).Where(user => user.Id == userId);
         if (!includeInactive)
         {
             query = query.Where(user => user.IsActive);
