@@ -35,6 +35,12 @@ public static class CacheKeys
     /// <summary>Group prefix for leaderboard entries.</summary>
     public const string LeaderboardPrefix = "leaderboard:";
 
+    /// <summary>User engagement snapshot: 30 seconds; invalidated right after a user acts.</summary>
+    public static readonly TimeSpan EngagementTtl = TimeSpan.FromSeconds(30);
+
+    /// <summary>Group prefix for user engagement entries.</summary>
+    public const string EngagementPrefix = "engagement:";
+
     /// <summary>Group prefix for user directory entries.</summary>
     public const string UsersPrefix = "users:";
 
@@ -76,4 +82,9 @@ public static class CacheKeys
     /// <param name="department">Department name.</param>
     public static string DepartmentUsers(string department) =>
         $"{UsersPrefix}department:{department.Trim().ToLowerInvariant()}";
+
+    /// <summary>Key for the engagement snapshot of a user.</summary>
+    /// <param name="userId">User identifier.</param>
+    public static string Engagement(Guid userId) => $"{EngagementPrefix}user:{userId}";
+
 }

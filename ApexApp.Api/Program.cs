@@ -23,7 +23,7 @@ var requestTimingEnabled = builder.Environment.IsRequestTimingEnabled(builder.Co
 var includeSqlInTimings = requestTimingEnabled &&
     builder.Configuration.GetValue<bool>($"{DiagnosticsOptions.SectionName}:IncludeSql");
 
-builder.Services.AddDbContext<AppDbContext>(options =>
+builder.Services.AddDbContext<AppDbContext>((serviceProvider, options) =>
 {
     options.UseNpgsql(
         builder.Configuration.GetConnectionString("DefaultConnection"),
@@ -40,6 +40,12 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     {
         options.AddInterceptors(new SqlTimingInterceptor(includeSqlInTimings));
     }
+
+    // Кеш вовлечённости сбрасывается сразу после записи действий,
+    // которые участвуют в расчёте статуса.
+    options.AddInterceptors(
+        new EngagementCacheInvalidationInterceptor(
+            serviceProvider.GetRequiredService<ICacheService>()));
 });
 
 builder.Services.AddRequestTimingDiagnostics(builder.Configuration);
@@ -82,6 +88,7 @@ builder.Services.AddScoped<ICartService, CartService>();
 builder.Services.AddScoped<IOrderService, OrderService>();
 builder.Services.AddScoped<IAchievementService, AchievementService>();
 builder.Services.AddScoped<ILeaderboardService, LeaderboardService>();
+builder.Services.AddScoped<IEngagementService, EngagementService>();
 builder.Services.AddScoped<ActivityRewardGranter>();
 builder.Services.AddScoped<IActivityRewardService, ActivityRewardService>();
 builder.Services.AddScoped<IQuestService, QuestService>();
