@@ -70,6 +70,8 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<Position> Positions { get; set; }
 
+    public DbSet<ProductVariantCategory> ProductVariantCategories { get; set; }
+
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -976,8 +978,8 @@ public partial class AppDbContext : DbContext
                 .IsRequired()
                 .HasMaxLength(200).HasColumnName("name");
 
-            entity.Property(v => v.Description)
-                .HasMaxLength(1000).HasColumnName("description");
+            entity.Property(v => v.CategoryId)
+                .HasColumnName("category_id");
 
             entity.Property(e => e.ImageUrl).HasColumnName("image_url");
 
@@ -1055,6 +1057,32 @@ public partial class AppDbContext : DbContext
                 .WithOne(e => e.Position)
                 .HasForeignKey(e => e.PositionId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<ProductVariantCategory>(entity =>
+        {
+            entity.HasKey(e => e.Id)
+                .HasName("product_variant_categories_pkey");
+
+            entity.ToTable("product_variant_categories");
+
+            entity.Property(e => e.Id)
+                .UseIdentityByDefaultColumn()
+                .HasColumnName("id");
+
+            entity.Property(e => e.Name)
+                .HasMaxLength(200)
+                .IsRequired()
+                .HasColumnName("name");
+
+            entity.Property(e => e.IsActive)
+                .HasDefaultValue(true)
+                .HasColumnName("is_active");
+
+            entity.HasMany(e => e.ProductVariants)
+                .WithOne(e => e.Category)
+                .HasForeignKey(e => e.CategoryId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         OnModelCreatingPartial(modelBuilder);

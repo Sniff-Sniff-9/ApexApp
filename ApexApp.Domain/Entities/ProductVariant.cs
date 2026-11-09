@@ -12,7 +12,7 @@ namespace ApexApp.Domain.Entities
 
         public string Name { get; set; } = null!;
 
-        public string? Description { get; set; }
+        public int? CategoryId { get; set; }
 
         public string? ImageUrl { get; set; }
 
@@ -21,6 +21,8 @@ namespace ApexApp.Domain.Entities
         public int Stock { get; set; }
 
         public bool IsActive { get; set; }
+
+        public ProductVariantCategory Category { get; set; } = null!;
 
         public virtual Product Product { get; set; } = null!;
     }

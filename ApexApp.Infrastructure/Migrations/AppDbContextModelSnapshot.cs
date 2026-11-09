@@ -575,10 +575,9 @@ namespace ApexApp.Infrastructure.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("Description")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)")
-                        .HasColumnName("description");
+                    b.Property<int?>("CategoryId")
+                        .HasColumnType("integer")
+                        .HasColumnName("category_id");
 
                     b.Property<string>("ImageUrl")
                         .HasColumnType("text")
@@ -612,9 +611,38 @@ namespace ApexApp.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CategoryId");
+
                     b.HasIndex("ProductId");
 
                     b.ToTable("product_variants", "public");
+                });
+
+            modelBuilder.Entity("ApexApp.Domain.Entities.ProductVariantCategory", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.HasKey("Id")
+                        .HasName("product_variant_categories_pkey");
+
+                    b.ToTable("product_variant_categories", (string)null);
                 });
 
             modelBuilder.Entity("ApexApp.Domain.Entities.Quest", b =>
@@ -1615,11 +1643,18 @@ namespace ApexApp.Infrastructure.Migrations
 
             modelBuilder.Entity("ApexApp.Domain.Entities.ProductVariant", b =>
                 {
+                    b.HasOne("ApexApp.Domain.Entities.ProductVariantCategory", "Category")
+                        .WithMany("ProductVariants")
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("ApexApp.Domain.Entities.Product", "Product")
                         .WithMany("ProductVariants")
                         .HasForeignKey("ProductId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Category");
 
                     b.Navigation("Product");
                 });
@@ -1949,6 +1984,11 @@ namespace ApexApp.Infrastructure.Migrations
 
                     b.Navigation("OrderItems");
 
+                    b.Navigation("ProductVariants");
+                });
+
+            modelBuilder.Entity("ApexApp.Domain.Entities.ProductVariantCategory", b =>
+                {
                     b.Navigation("ProductVariants");
                 });
 

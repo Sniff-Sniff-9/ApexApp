@@ -87,4 +87,41 @@ public sealed class ProductRepository(
             .OrderBy(p => p.Name)
             .ToListAsync(cancellationToken);
     }
+
+    public async Task<IEnumerable<ProductVariant>> GetVariantsAsync(int productId)
+    {
+        return await dbContext.ProductVariants
+            .AsNoTracking()
+            .Where(v => v.ProductId == productId)
+            .ToListAsync();
+    }
+
+    public async Task<ProductVariant?> GetVariantByIdAsync(int productId, int variantId)
+    {
+        return await dbContext.ProductVariants
+            .FirstOrDefaultAsync(v => v.ProductId == productId && v.Id == variantId);
+    }
+
+    public async Task<ProductVariant> AddVariantAsync(ProductVariant variant)
+    {
+        await dbContext.ProductVariants.AddAsync(variant);
+        await dbContext.SaveChangesAsync();
+
+        return variant;
+    }
+
+    public async Task<ProductVariant> UpdateVariantAsync(ProductVariant variant)
+    {
+        await dbContext.SaveChangesAsync();
+
+        return variant;
+    }
+
+    public async Task<bool> DeleteVariantAsync(ProductVariant variant)
+    {
+        dbContext.ProductVariants.Remove(variant);
+        await dbContext.SaveChangesAsync();
+
+        return true;
+    }
 }

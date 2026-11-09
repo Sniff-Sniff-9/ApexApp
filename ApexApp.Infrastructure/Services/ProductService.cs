@@ -169,4 +169,82 @@ public sealed class ProductService(
             categoryId,
             cancellationToken);
     }
+
+    public async Task<IEnumerable<ProductVariant>> GetVariantsAsync(int productId)
+    {
+        var product = await repository.GetByIdAsync(productId);
+
+        if (product == null)
+            throw new KeyNotFoundException("Product not found.");
+
+        return await repository.GetVariantsAsync(productId);
+    }
+
+    public async Task<ProductVariant?> GetVariantByIdAsync(int productId, int variantId)
+    {
+        var product = await repository.GetByIdAsync(productId);
+
+        if (product == null)
+            throw new KeyNotFoundException("Product not found.");
+
+        return await repository.GetVariantByIdAsync(productId, variantId);
+    }
+
+    public async Task<ProductVariant> AddVariantAsync(int productId, ProductVariant variant)
+    {
+        var product = await repository.GetByIdAsync(productId);
+
+        if (product == null)
+            throw new KeyNotFoundException("Product not found.");
+
+        if (string.IsNullOrWhiteSpace(variant.Name))
+            throw new ArgumentException("Variant name is required.");
+
+        if (variant.Stock < 0)
+            throw new ArgumentException("Stock cannot be negative.");
+
+        if (variant.Price < 0)
+            throw new ArgumentException("Price cannot be negative.");
+
+        variant.ProductId = productId;
+        variant.IsActive = true;
+
+        return await repository.AddVariantAsync(variant);
+    }
+
+    public async Task<ProductVariant?> UpdateVariantAsync(int productId, int variantId, ProductVariant variant)
+    {
+        var existingVariant = await repository.GetVariantByIdAsync(productId, variantId);
+
+        if (existingVariant == null)
+            return null;
+
+        if (string.IsNullOrWhiteSpace(variant.Name))
+            throw new ArgumentException("Variant name is required.");
+
+        if (variant.Stock < 0)
+            throw new ArgumentException("Stock cannot be negative.");
+
+        if (variant.Price < 0)
+            throw new ArgumentException("Price cannot be negative.");
+
+        existingVariant.Name = variant.Name;
+        existingVariant.Category = variant.Category;
+        existingVariant.ImageUrl = variant.ImageUrl;
+        existingVariant.Price = variant.Price;
+        existingVariant.Stock = variant.Stock;
+        existingVariant.IsActive = variant.IsActive;
+
+        return await repository.UpdateVariantAsync(existingVariant);
+    }
+
+    public async Task<bool> DeleteVariantAsync(int productId, int variantId)
+    {
+        var variant = await repository.GetVariantByIdAsync(productId, variantId);
+
+        if (variant == null)
+            return false;
+
+        return await repository.DeleteVariantAsync(variant);
+    }
 }
