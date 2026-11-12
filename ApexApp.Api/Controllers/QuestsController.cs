@@ -1,3 +1,4 @@
+using System.Text;
 using ApexApp.Api.Authorization;
 using ApexApp.Api.DTOs;
 using ApexApp.Api.Extensions;
@@ -376,6 +377,113 @@ public sealed class QuestsController(IQuestService questService) : ApiController
             result.TotalCount,
             result.Page,
             result.PageSize));
+    }
+
+    /// <summary>
+    /// Получить страницу участников квеста с прогрессом выполнения шагов.
+    /// </summary>
+    /// <param name="questId">Идентификатор квеста.</param>
+    /// <param name="page">Номер страницы, начиная с 1.</param>
+    /// <param name="pageSize">Размер страницы (от 1 до 100).</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    /// <response code="200">Список участников успешно получен.</response>
+    /// <response code="400">Некорректные параметры запроса.</response>
+    /// <response code="401">Пользователь не авторизован.</response>
+    /// <response code="403">Недостаточно прав.</response>
+    /// <response code="404">Квест не найден.</response>
+    [HttpGet("{questId:long}/participants")]
+    [Authorize(Policy = AppPolicies.ManageActivities)]
+    [ProducesResponseType(typeof(PagedResult<AdminQuestParticipantDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<PagedResult<AdminQuestParticipantDto>>> GetParticipants(
+        long questId,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = DefaultPageSize,
+        CancellationToken cancellationToken = default)
+    {
+        var pagingError = ValidatePaging(page, pageSize);
+
+        if (pagingError is not null)
+        {
+            return BadRequest(new { message = pagingError });
+        }
+
+        var result = await questService.GetParticipantsAsync(
+            questId,
+            page,
+            pageSize,
+            cancellationToken);
+
+        if (!result.IsSuccess)
+        {
+            return ToErrorResult(result.StatusCode, result.Error);
+        }
+
+        var participants = result.Value!;
+
+        return Ok(new PagedResult<AdminQuestParticipantDto>(
+            participants.Items.Select(ToDto).ToList(),
+            participants.TotalCount,
+            participants.Page,
+            participants.PageSize));
+    }
+
+    /// <summary>
+    /// Получить сводные показатели квеста.
+    /// </summary>
+    /// <param name="questId">Идентификатор квеста.</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    /// <response code="200">Показатели успешно получены.</response>
+    /// <response code="401">Пользователь не авторизован.</response>
+    /// <response code="403">Недостаточно прав.</response>
+    /// <response code="404">Квест не найден.</response>
+    [HttpGet("{questId:long}/stats")]
+    [Authorize(Policy = AppPolicies.ManageActivities)]
+    [ProducesResponseType(typeof(QuestStatsDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<QuestStatsDto>> GetStats(
+        long questId,
+        CancellationToken cancellationToken)
+    {
+        var result = await questService.GetStatsAsync(questId, cancellationToken);
+
+        return result.IsSuccess
+            ? Ok(ToDto(result.Value!))
+            : ToErrorResult(result.StatusCode, result.Error);
+    }
+
+    /// <summary>
+    /// Опубликовать квест.
+    /// </summary>
+    /// <remarks>Для публикации нужен хотя бы один обязательный шаг.</remarks>
+    /// <param name="questId">Идентификатор квеста.</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    /// <response code="204">Квест опубликован.</response>
+    /// <response code="401">Пользователь не авторизован.</response>
+    /// <response code="403">Недостаточно прав.</response>
+    /// <response code="404">Квест не найден.</response>
+    /// <response code="409">Квест уже закончился или не имеет обязательных шагов.</response>
+    [HttpPost("{questId:long}/publish")]
+    [Authorize(Policy = AppPolicies.ManageActivities)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult> Publish(
+        long questId,
+        CancellationToken cancellationToken)
+    {
+        var result = await questService.PublishAsync(questId, cancellationToken);
+
+        return result.IsSuccess
+            ? NoContent()
+            : ToErrorResult(result.StatusCode, result.Error);
     }
 
     /// <summary>
@@ -923,6 +1031,34 @@ public sealed class QuestsController(IQuestService questService) : ApiController
             view.Proof.ReviewedBy,
             view.Proof.ReviewedAt,
             view.Proof.CreatedAt);
+
+    private static AdminQuestParticipantDto ToDto(AdminQuestParticipant participant) =>
+        new(
+            participant.Participation.Id,
+            participant.Participation.UserId,
+            participant.FirstName,
+            participant.LastName,
+            participant.AvatarUrl,
+            participant.Participation.Status,
+            participant.Participation.StartedAt,
+            participant.Participation.CompletedAt,
+            participant.Participation.RewardClaimed,
+            participant.TotalSteps,
+            participant.CompletedSteps,
+            participant.PendingProofs);
+
+    private static QuestStatsDto ToDto(QuestStats stats) =>
+        new(
+            stats.QuestId,
+            stats.TotalParticipants,
+            stats.InProgress,
+            stats.Completed,
+            stats.Cancelled,
+            stats.RewardClaimed,
+            stats.PendingProofs);
+
+    private static string Csv(string? value) =>
+        $"\"{(value ?? string.Empty).Replace("\"", "\"\"")}\"";
 
     private static QuestCommand ToCommand(
         string? title,

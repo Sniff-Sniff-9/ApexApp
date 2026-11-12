@@ -248,7 +248,7 @@ public sealed class UsersController : ApiControllerBase
     /// <summary>
     /// Получить пользователей департамента текущего руководителя.
     /// </summary>
-    [Authorize(Policy = AppPolicies.ManageUsers)]
+    [Authorize(Policy = AppPolicies.ViewTeam)]
     [HttpGet("my-department")]
     [ProducesResponseType(typeof(IReadOnlyList<CurrentUserProfileDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

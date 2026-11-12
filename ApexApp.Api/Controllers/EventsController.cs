@@ -71,6 +71,55 @@ public sealed class EventsController(IEventService eventService) : ApiController
     }
 
     /// <summary>
+    /// Получить мероприятия, на которые зарегистрирован текущий пользователь.
+    /// </summary>
+    /// <remarks>
+    /// Возвращаются прошедшие, активные и отменённые регистрации, начиная с ближайших
+    /// по дате начала мероприятия.
+    /// </remarks>
+    /// <param name="page">Номер страницы, начиная с 1.</param>
+    /// <param name="pageSize">Размер страницы (от 1 до 100).</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    /// <response code="200">Список мероприятий успешно получен.</response>
+    /// <response code="400">Некорректные параметры пагинации.</response>
+    /// <response code="401">Пользователь не авторизован.</response>
+    [HttpGet("my")]
+    [ProducesResponseType(typeof(PagedResult<MyEventDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<PagedResult<MyEventDto>>> GetMy(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = DefaultPageSize,
+        CancellationToken cancellationToken = default)
+    {
+        var userId = User.GetUserId();
+
+        if (userId is null)
+        {
+            return Unauthorized();
+        }
+
+        var pagingError = ValidatePaging(page, pageSize);
+
+        if (pagingError is not null)
+        {
+            return BadRequest(new { message = pagingError });
+        }
+
+        var result = await eventService.GetMyAsync(
+            userId.Value,
+            page,
+            pageSize,
+            cancellationToken);
+
+        return Ok(new PagedResult<MyEventDto>(
+            result.Items.Select(ToMyDto).ToList(),
+            result.TotalCount,
+            result.Page,
+            result.PageSize));
+    }
+
+    /// <summary>
     /// Получить детали мероприятия вместе с регистрацией текущего пользователя.
     /// </summary>
     /// <param name="eventId">Идентификатор мероприятия.</param>
@@ -443,6 +492,96 @@ public sealed class EventsController(IEventService eventService) : ApiController
     }
 
     /// <summary>
+    /// Опубликовать мероприятие.
+    /// </summary>
+    /// <remarks>
+    /// Публикация уже опубликованного мероприятия идемпотентна.
+    /// Мероприятие, которое уже закончилось, опубликовать нельзя.
+    /// </remarks>
+    /// <param name="eventId">Идентификатор мероприятия.</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    /// <response code="204">Мероприятие опубликовано.</response>
+    /// <response code="401">Пользователь не авторизован.</response>
+    /// <response code="403">Недостаточно прав.</response>
+    /// <response code="404">Мероприятие не найдено.</response>
+    /// <response code="409">Мероприятие уже закончилось.</response>
+    [HttpPost("{eventId:long}/publish")]
+    [Authorize(Policy = AppPolicies.ManageActivities)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult> Publish(
+        long eventId,
+        CancellationToken cancellationToken)
+    {
+        var result = await eventService.PublishAsync(eventId, cancellationToken);
+
+        return result.IsSuccess
+            ? NoContent()
+            : ToErrorResult(result.StatusCode, result.Error);
+    }
+
+    /// <summary>
+    /// Отменить мероприятие и все действующие регистрации.
+    /// </summary>
+    /// <remarks>
+    /// Отмена недоступна после начала мероприятия и после подтверждения посещения
+    /// или выдачи награды. История регистраций сохраняется со статусом <c>cancelled</c>.
+    /// </remarks>
+    /// <param name="eventId">Идентификатор мероприятия.</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    /// <response code="204">Мероприятие отменено.</response>
+    /// <response code="401">Пользователь не авторизован.</response>
+    /// <response code="403">Недостаточно прав.</response>
+    /// <response code="404">Мероприятие не найдено.</response>
+    /// <response code="409">Мероприятие уже началось, либо есть подтверждённые посещения или награды.</response>
+    [HttpPost("{eventId:long}/cancel")]
+    [Authorize(Policy = AppPolicies.ManageActivities)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult> Cancel(
+        long eventId,
+        CancellationToken cancellationToken)
+    {
+        var result = await eventService.CancelAsync(eventId, cancellationToken);
+
+        return result.IsSuccess
+            ? NoContent()
+            : ToErrorResult(result.StatusCode, result.Error);
+    }
+
+    /// <summary>
+    /// Архивировать мероприятие без отмены регистраций и наград.
+    /// </summary>
+    /// <param name="eventId">Идентификатор мероприятия.</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    /// <response code="204">Мероприятие архивировано.</response>
+    /// <response code="401">Пользователь не авторизован.</response>
+    /// <response code="403">Недостаточно прав.</response>
+    /// <response code="404">Мероприятие не найдено.</response>
+    [HttpPost("{eventId:long}/archive")]
+    [Authorize(Policy = AppPolicies.ManageActivities)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult> Archive(
+        long eventId,
+        CancellationToken cancellationToken)
+    {
+        var result = await eventService.ArchiveAsync(eventId, cancellationToken);
+
+        return result.IsSuccess
+            ? NoContent()
+            : ToErrorResult(result.StatusCode, result.Error);
+    }
+
+    /// <summary>
     /// Получить страницу участников мероприятия.
     /// </summary>
     /// <param name="eventId">Идентификатор мероприятия.</param>
@@ -566,6 +705,23 @@ public sealed class EventsController(IEventService eventService) : ApiController
             summary.RegisteredCount,
             summary.Event.RewardAmount,
             summary.Registration?.Status);
+
+    private static MyEventDto ToMyDto(MyEventSummary summary) =>
+        new(
+            summary.Event.Id,
+            summary.Event.Title,
+            summary.Event.Description,
+            summary.Event.StartAt,
+            summary.Event.EndAt,
+            summary.Event.Location,
+            summary.Event.MaxParticipants,
+            summary.Event.RewardAmount,
+            summary.Event.IsActive,
+            summary.Registration.Id,
+            summary.Registration.Status,
+            summary.Registration.RegisteredAt,
+            summary.Registration.AttendedAt,
+            summary.Registration.RewardClaimed);
 
     private static EventDetailsDto ToDetailsDto(EventDetailsResult details) =>
         new(

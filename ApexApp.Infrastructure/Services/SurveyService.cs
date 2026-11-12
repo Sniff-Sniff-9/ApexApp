@@ -1,4 +1,4 @@
-﻿using System.Data;
+using System.Data;
 using System.Text.Json;
 using ApexApp.Domain.Entities;
 using ApexApp.Infrastructure.Caching;
@@ -276,9 +276,21 @@ public sealed class SurveyService : ISurveyService
             .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
 
         SurveyResponse? response = null;
+        long rewardGranted = 0;
 
         try
         {
+            // Serialize reward decisions for this user. This prevents two concurrent
+            // submissions from both observing "no reward yet" and both granting points.
+            var lockedUser = await dbContext.Users
+                .FromSqlInterpolated($"SELECT * FROM public.users WHERE id = {userId} FOR UPDATE")
+                .SingleOrDefaultAsync(cancellationToken);
+
+            if (lockedUser is null)
+            {
+                return ServiceResult<SurveySubmissionResult>.Fail(404, "User was not found.");
+            }
+
             var alreadyResponded = await dbContext.SurveyResponses
                 .AnyAsync(
                     item => item.SurveyId == surveyId && item.UserId == userId,
@@ -290,6 +302,13 @@ public sealed class SurveyService : ISurveyService
                     409,
                     "You have already responded to this survey.");
             }
+
+            // A survey reward is granted once per user per survey. Additional responses
+            // remain allowed when configured, but they do not mint additional points.
+            var rewardAlreadyGranted = await HasSurveyRewardAsync(
+                userId,
+                surveyId,
+                cancellationToken);
 
             var now = DateTime.UtcNow;
 
@@ -316,15 +335,16 @@ public sealed class SurveyService : ISurveyService
 
             await dbContext.SaveChangesAsync(cancellationToken);
 
-            // Начисляем награду после сохранения ответа, чтобы response.Id уже был известен.
-            if (survey.RewardAmount > 0)
+            // Grant the reward only on the first eligible submission. The related entity
+            // is the survey, not the response, so later responses can be detected.
+            if (survey.RewardAmount > 0 && !rewardAlreadyGranted)
             {
                 var credit = await activityRewardGranter.GrantAsync(
                     userId,
                     survey.RewardAmount,
                     $"Награда за прохождение анкеты \"{survey.Title}\"",
                     ActivityRewardEntityTypes.Survey,
-                    response.Id,
+                    surveyId,
                     cancellationToken);
 
                 if (!credit.IsSuccess)
@@ -335,6 +355,8 @@ public sealed class SurveyService : ISurveyService
                         credit.StatusCode,
                         credit.Error!);
                 }
+
+                rewardGranted = survey.RewardAmount;
             }
 
             await databaseTransaction.CommitAsync(cancellationToken);
@@ -364,7 +386,30 @@ public sealed class SurveyService : ISurveyService
         }
 
         return ServiceResult<SurveySubmissionResult>.Ok(
-            new SurveySubmissionResult(response!, prepared.Count, survey.RewardAmount));
+            new SurveySubmissionResult(response!, prepared.Count, rewardGranted));
+    }
+
+    /// <summary>
+    /// Checks whether the user has already received a reward for this survey.
+    /// Supports both the legacy link to a response id and the current link to the survey id.
+    /// </summary>
+    private async Task<bool> HasSurveyRewardAsync(
+        Guid userId,
+        long surveyId,
+        CancellationToken cancellationToken)
+    {
+        return await dbContext.Transactions
+            .AsNoTracking()
+            .AnyAsync(
+                transaction => transaction.UserId == userId
+                               && transaction.Type == TransactionType.ActivityReward
+                               && transaction.RelatedEntityType == ActivityRewardEntityTypes.Survey
+                               && (transaction.RelatedEntityId == surveyId
+                                   || dbContext.SurveyResponses.Any(response =>
+                                       response.Id == transaction.RelatedEntityId
+                                       && response.SurveyId == surveyId
+                                       && response.UserId == userId)),
+                cancellationToken);
     }
 
     /// <inheritdoc />

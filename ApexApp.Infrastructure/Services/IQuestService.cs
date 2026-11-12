@@ -109,6 +109,38 @@ public interface IQuestService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Возвращает страницу участников квеста с прогрессом выполнения шагов.
+    /// </summary>
+    /// <param name="questId">Идентификатор квеста.</param>
+    /// <param name="page">Номер страницы, начиная с 1.</param>
+    /// <param name="pageSize">Размер страницы.</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    Task<ServiceResult<PagedResult<AdminQuestParticipant>>> GetParticipantsAsync(
+        long questId,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default);
+
+
+    /// <summary>
+    /// Возвращает сводные показатели квеста.
+    /// </summary>
+    /// <param name="questId">Идентификатор квеста.</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    Task<ServiceResult<QuestStats>> GetStatsAsync(
+        long questId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Публикует квест. Публикация требует хотя бы одного обязательного шага.
+    /// </summary>
+    /// <param name="questId">Идентификатор квеста.</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    Task<ServiceResult<Quest>> PublishAsync(
+        long questId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Создаёт квест.
     /// </summary>
     /// <param name="command">Данные квеста.</param>

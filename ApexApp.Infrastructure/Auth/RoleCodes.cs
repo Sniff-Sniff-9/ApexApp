@@ -15,6 +15,7 @@ public static class RoleCodes
         Manager,
         Merchandiser,
         HumanResources,
+        Support,
         Admin,
         SuperAdmin
     ];

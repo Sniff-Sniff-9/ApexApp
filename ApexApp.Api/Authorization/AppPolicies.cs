@@ -4,6 +4,9 @@ public static class AppPolicies
 {
     public const string ActiveUser = "ActiveUser";
     public const string ManageUsers = "ManageUsers";
+    public const string ManageOrg = "ManageOrg";
+    public const string ViewTeam = "ViewTeam";
+    public const string ManageTeam = "ManageTeam";
     public const string ManageRoles = "ManageRoles";
     public const string IssueBonus = "IssueBonus";
     public const string AdjustBalances = "AdjustBalances";

@@ -139,15 +139,16 @@ public sealed class QuestService(
         var totalCount = await query.CountAsync(cancellationToken);
 
         var participations = await query
-            .OrderByDescending(participation => participation.StartedAt)
-            .ThenByDescending(participation => participation.Id)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .Include(participation => participation.Quest)
-            .ThenInclude(quest => quest.QuestSteps)
-            .Include(participation => participation.QuestStepCompletions)
-            .ThenInclude(completion => completion.QuestProofs)
-            .ToListAsync(cancellationToken);
+    .OrderByDescending(participation => participation.StartedAt)
+    .ThenByDescending(participation => participation.Id)
+    .Skip((page - 1) * pageSize)
+    .Take(pageSize)
+    .Include(participation => participation.Quest)
+        .ThenInclude(quest => quest.QuestSteps)
+    .Include(participation => participation.QuestStepCompletions)
+        .ThenInclude(completion => completion.QuestProofs)
+    .AsSplitQuery()
+    .ToListAsync(cancellationToken);
 
         var items = participations
             .Select(participation => new MyQuestSummary(
@@ -788,6 +789,215 @@ public sealed class QuestService(
 
         return new PagedResult<AdminQuestSummary>(items, totalCount, page, pageSize);
     }
+
+    /// <inheritdoc />
+    public async Task<ServiceResult<PagedResult<AdminQuestParticipant>>> GetParticipantsAsync(
+        long questId,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        if (questId <= 0)
+        {
+            return ServiceResult<PagedResult<AdminQuestParticipant>>.Fail(
+                400,
+                "A valid quest ID is required.");
+        }
+
+        ArgumentOutOfRangeException.ThrowIfLessThan(page, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);
+
+        var quest = await dbContext.Quests
+            .AsNoTracking()
+            .Include(item => item.QuestSteps)
+            .FirstOrDefaultAsync(item => item.Id == questId, cancellationToken);
+
+        if (quest is null)
+        {
+            return ServiceResult<PagedResult<AdminQuestParticipant>>.Fail(
+                404,
+                "Quest was not found.");
+        }
+
+        var query = dbContext.QuestParticipations
+            .AsNoTracking()
+            .Where(participation => participation.QuestId == questId);
+
+        var totalCount = await query.CountAsync(cancellationToken);
+
+        var participations = await query
+            .OrderByDescending(participation => participation.StartedAt)
+            .ThenByDescending(participation => participation.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Include(participation => participation.User)
+            .Include(participation => participation.QuestStepCompletions)
+            .ThenInclude(completion => completion.QuestProofs)
+            .ToListAsync(cancellationToken);
+
+        var items = participations
+            .Select(participation => ToAdminParticipant(participation, quest))
+            .ToList();
+
+        return ServiceResult<PagedResult<AdminQuestParticipant>>.Ok(
+            new PagedResult<AdminQuestParticipant>(items, totalCount, page, pageSize));
+    }
+
+
+    /// <inheritdoc />
+    public async Task<ServiceResult<QuestStats>> GetStatsAsync(
+        long questId,
+        CancellationToken cancellationToken = default)
+    {
+        if (questId <= 0)
+        {
+            return ServiceResult<QuestStats>.Fail(400, "A valid quest ID is required.");
+        }
+
+        var questExists = await dbContext.Quests
+            .AsNoTracking()
+            .AnyAsync(quest => quest.Id == questId, cancellationToken);
+
+        if (!questExists)
+        {
+            return ServiceResult<QuestStats>.Fail(404, "Quest was not found.");
+        }
+
+        var counts = await dbContext.QuestParticipations
+            .AsNoTracking()
+            .Where(participation => participation.QuestId == questId)
+            .GroupBy(participation => participation.Status)
+            .Select(group => new { Status = group.Key, Count = group.Count() })
+            .ToListAsync(cancellationToken);
+
+        var countsByStatus = counts.ToDictionary(
+            row => row.Status,
+            row => row.Count,
+            StringComparer.Ordinal);
+
+        var rewardClaimed = await dbContext.QuestParticipations
+            .AsNoTracking()
+            .CountAsync(
+                participation => participation.QuestId == questId && participation.RewardClaimed,
+                cancellationToken);
+
+        var pendingProofs = await dbContext.QuestProofs
+            .AsNoTracking()
+            .CountAsync(
+                proof => proof.Status == QuestProofStatuses.Pending
+                         && proof.Completion.QuestId == questId,
+                cancellationToken);
+
+        var totalParticipants = counts.Sum(row => row.Count);
+
+        return ServiceResult<QuestStats>.Ok(new QuestStats(
+            questId,
+            totalParticipants,
+            countsByStatus.GetValueOrDefault(QuestParticipationStatuses.InProgress),
+            countsByStatus.GetValueOrDefault(QuestParticipationStatuses.Completed),
+            countsByStatus.GetValueOrDefault(QuestParticipationStatuses.Cancelled),
+            rewardClaimed,
+            pendingProofs));
+    }
+
+    /// <inheritdoc />
+    public async Task<ServiceResult<Quest>> PublishAsync(
+        long questId,
+        CancellationToken cancellationToken = default)
+    {
+        if (questId <= 0)
+        {
+            return ServiceResult<Quest>.Fail(400, "A valid quest ID is required.");
+        }
+
+        var quest = await dbContext.Quests
+            .Include(item => item.QuestSteps)
+            .FirstOrDefaultAsync(item => item.Id == questId, cancellationToken);
+
+        if (quest is null)
+        {
+            return ServiceResult<Quest>.Fail(404, "Quest was not found.");
+        }
+
+        if (quest.IsActive)
+        {
+            return ServiceResult<Quest>.Ok(quest);
+        }
+
+        if (quest.EndAt is DateTime endAt && endAt < DateTime.UtcNow)
+        {
+            return ServiceResult<Quest>.Fail(
+                409,
+                "Cannot publish a quest that has already ended.");
+        }
+
+        if (!quest.QuestSteps.Any(step => step.IsRequired))
+        {
+            return ServiceResult<Quest>.Fail(
+                409,
+                "A quest must have at least one required step before publishing.");
+        }
+
+        if (quest.QuestSteps.Any(step =>
+                step.IsRequired
+                && step.CompletionType == QuestStepCompletionType.Automatic))
+        {
+            return ServiceResult<Quest>.Fail(
+                409,
+                "Cannot publish a quest with mandatory automatic steps; automatic completion is not supported yet.");
+        }
+
+        quest.IsActive = true;
+        quest.UpdatedAt = DateTime.UtcNow;
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return ServiceResult<Quest>.Ok(quest);
+    }
+
+    private async Task<ServiceResult<Quest>> SetActiveAsync(
+        long questId,
+        bool isActive,
+        CancellationToken cancellationToken)
+    {
+        if (questId <= 0)
+        {
+            return ServiceResult<Quest>.Fail(400, "A valid quest ID is required.");
+        }
+
+        var quest = await dbContext.Quests
+            .FirstOrDefaultAsync(item => item.Id == questId, cancellationToken);
+
+        if (quest is null)
+        {
+            return ServiceResult<Quest>.Fail(404, "Quest was not found.");
+        }
+
+        if (quest.IsActive != isActive)
+        {
+            quest.IsActive = isActive;
+            quest.UpdatedAt = DateTime.UtcNow;
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        return ServiceResult<Quest>.Ok(quest);
+    }
+
+    private static AdminQuestParticipant ToAdminParticipant(
+        QuestParticipation participation,
+        Quest quest) =>
+        new(
+            participation,
+            participation.User?.FirstName ?? string.Empty,
+            participation.User?.LastName ?? string.Empty,
+            participation.User?.AvatarUrl,
+            quest.QuestSteps.Count,
+            quest.QuestSteps.Count(step =>
+                IsStepSatisfied(step, participation.QuestStepCompletions)),
+            participation.QuestStepCompletions
+                .SelectMany(completion => completion.QuestProofs)
+                .Count(proof => proof.Status == QuestProofStatuses.Pending));
 
     /// <inheritdoc />
     public async Task<ServiceResult<Quest>> CreateAsync(

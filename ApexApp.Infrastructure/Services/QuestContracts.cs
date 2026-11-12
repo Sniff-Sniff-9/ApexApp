@@ -166,6 +166,44 @@ public sealed record AdminQuestSummary(
     int PendingProofsCount);
 
 /// <summary>
+/// Участник квеста в административном представлении.
+/// </summary>
+/// <param name="Participation">Участие в квесте.</param>
+/// <param name="FirstName">Имя участника.</param>
+/// <param name="LastName">Фамилия участника.</param>
+/// <param name="AvatarUrl">Ссылка на аватар участника.</param>
+/// <param name="TotalSteps">Общее количество шагов квеста.</param>
+/// <param name="CompletedSteps">Количество подтверждённых шагов.</param>
+/// <param name="PendingProofs">Количество доказательств, ожидающих проверки.</param>
+public sealed record AdminQuestParticipant(
+    QuestParticipation Participation,
+    string FirstName,
+    string LastName,
+    string? AvatarUrl,
+    int TotalSteps,
+    int CompletedSteps,
+    int PendingProofs);
+
+/// <summary>
+/// Сводные показатели квеста.
+/// </summary>
+/// <param name="QuestId">Идентификатор квеста.</param>
+/// <param name="TotalParticipants">Общее количество участий.</param>
+/// <param name="InProgress">Количество активных участий.</param>
+/// <param name="Completed">Количество завершённых участий.</param>
+/// <param name="Cancelled">Количество отменённых участий.</param>
+/// <param name="RewardClaimed">Количество участий с обработанной наградой.</param>
+/// <param name="PendingProofs">Количество доказательств, ожидающих проверки.</param>
+public sealed record QuestStats(
+    long QuestId,
+    int TotalParticipants,
+    int InProgress,
+    int Completed,
+    int Cancelled,
+    int RewardClaimed,
+    int PendingProofs);
+
+/// <summary>
 /// Доказательство вместе с контекстом квеста, шага и участника.
 /// </summary>
 /// <param name="Proof">Доказательство.</param>

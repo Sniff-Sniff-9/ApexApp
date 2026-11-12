@@ -1,4 +1,4 @@
-﻿using ApexApp.Domain.Entities;
+using ApexApp.Domain.Entities;
 using ApexApp.Infrastructure.Caching;
 using ApexApp.Infrastructure.Common;
 using ApexApp.Infrastructure.Data;
@@ -43,8 +43,8 @@ public sealed class UserProfileService : IUserProfileService
     {
         var manager = await _dbContext.Users
             .AsNoTracking()
-            .Where(user => user.Id == managerId).Include(u => u.Department).Include(u => u.Position)    
-            .Select(user => new { user.Department })
+            .Where(user => user.Id == managerId)
+            .Select(user => new { user.DepartmentId })
             .SingleOrDefaultAsync(cancellationToken);
 
         if (manager is null)
@@ -52,8 +52,15 @@ public sealed class UserProfileService : IUserProfileService
             return null;
         }
 
-        // Keyed by department name: the payload does not depend on the caller.
-        var cacheKey = CacheKeys.DepartmentUsers(manager.Department?.Name ?? "None");
+        // A manager without a department has no team. Returning an empty list is safer
+        // than dereferencing a missing navigation property.
+        if (manager.DepartmentId is not int departmentId)
+        {
+            return [];
+        }
+
+        // Keyed by department identifier: the payload does not depend on the caller.
+        var cacheKey = CacheKeys.DepartmentUsersById(departmentId);
 
         if (_cache.TryGet<IReadOnlyList<CurrentUserProfile>>(cacheKey, out var cached) &&
             cached is not null)
@@ -63,7 +70,7 @@ public sealed class UserProfileService : IUserProfileService
 
         var users = await _dbContext.Users
             .AsNoTracking().Include(u => u.Department).Include(u => u.Position)
-            .Where(user => user.Department.Id == manager.Department.Id)
+            .Where(user => user.DepartmentId == departmentId)
             .OrderBy(user => user.LastName)
             .ThenBy(user => user.FirstName)
             .ToListAsync(cancellationToken);
@@ -78,6 +85,78 @@ public sealed class UserProfileService : IUserProfileService
         _cache.Set(cacheKey, department, CacheKeys.UsersTtl);
 
         return department;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<CurrentUserProfile>> GetByDepartmentIdAsync(
+        int departmentId,
+        bool includeInactive,
+        CancellationToken cancellationToken = default)
+    {
+        if (departmentId <= 0)
+        {
+            return [];
+        }
+
+        var query = _dbContext.Users
+            .AsNoTracking()
+            .Include(user => user.Department)
+            .Include(user => user.Position)
+            .Where(user => user.DepartmentId == departmentId);
+
+        if (!includeInactive)
+        {
+            query = query.Where(user => user.IsActive);
+        }
+
+        var users = await query
+            .OrderBy(user => user.LastName)
+            .ThenBy(user => user.FirstName)
+            .ToListAsync(cancellationToken);
+
+        var rolesByUser = await LoadRolesAsync(
+            users.Select(user => user.Id).ToList(),
+            cancellationToken);
+
+        return users
+            .Select(user => Map(user, rolesByUser.GetValueOrDefault(user.Id, [])))
+            .ToList();
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<CurrentUserProfile>> GetByPositionIdAsync(
+        int positionId,
+        bool includeInactive,
+        CancellationToken cancellationToken = default)
+    {
+        if (positionId <= 0)
+        {
+            return [];
+        }
+
+        var query = _dbContext.Users
+            .AsNoTracking()
+            .Include(user => user.Department)
+            .Include(user => user.Position)
+            .Where(user => user.PositionId == positionId);
+
+        if (!includeInactive)
+        {
+            query = query.Where(user => user.IsActive);
+        }
+
+        var users = await query
+            .OrderBy(user => user.LastName)
+            .ThenBy(user => user.FirstName)
+            .ToListAsync(cancellationToken);
+
+        var rolesByUser = await LoadRolesAsync(
+            users.Select(user => user.Id).ToList(),
+            cancellationToken);
+
+        return users
+            .Select(user => Map(user, rolesByUser.GetValueOrDefault(user.Id, [])))
+            .ToList();
     }
 
     public async Task<IReadOnlyList<CurrentUserProfile>> ListAsync(
@@ -114,6 +193,17 @@ public sealed class UserProfileService : IUserProfileService
         _cache.Set(cacheKey, profiles, CacheKeys.UsersTtl);
 
         return profiles;
+    }
+
+    public Task<int?> GetDepartmentIdAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        return _dbContext.Users
+            .AsNoTracking()
+            .Where(user => user.Id == userId)
+            .Select(user => user.DepartmentId)
+            .SingleOrDefaultAsync(cancellationToken);
     }
 
     public async Task<CurrentUserProfile?> GetByIdAsync(

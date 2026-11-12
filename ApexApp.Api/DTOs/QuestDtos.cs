@@ -120,6 +120,54 @@ namespace ApexApp.Api.DTOs
         DateTime UpdatedAt);
 
     /// <summary>
+    /// Участник квеста в административном представлении.
+    /// </summary>
+    /// <param name="ParticipationId">Идентификатор участия.</param>
+    /// <param name="UserId">Идентификатор пользователя.</param>
+    /// <param name="FirstName">Имя пользователя.</param>
+    /// <param name="LastName">Фамилия пользователя.</param>
+    /// <param name="AvatarUrl">Ссылка на аватар.</param>
+    /// <param name="Status">Статус участия.</param>
+    /// <param name="StartedAt">Дата и время начала участия.</param>
+    /// <param name="CompletedAt">Дата и время завершения.</param>
+    /// <param name="RewardClaimed">Признак обработанной награды.</param>
+    /// <param name="TotalSteps">Общее количество шагов.</param>
+    /// <param name="CompletedSteps">Количество подтверждённых шагов.</param>
+    /// <param name="PendingProofs">Количество доказательств на проверке.</param>
+    public sealed record AdminQuestParticipantDto(
+        long ParticipationId,
+        Guid UserId,
+        string FirstName,
+        string LastName,
+        string? AvatarUrl,
+        string Status,
+        DateTime StartedAt,
+        DateTime? CompletedAt,
+        bool RewardClaimed,
+        int TotalSteps,
+        int CompletedSteps,
+        int PendingProofs);
+
+    /// <summary>
+    /// Сводные показатели квеста.
+    /// </summary>
+    /// <param name="QuestId">Идентификатор квеста.</param>
+    /// <param name="TotalParticipants">Общее количество участий.</param>
+    /// <param name="InProgress">Количество активных участий.</param>
+    /// <param name="Completed">Количество завершённых участий.</param>
+    /// <param name="Cancelled">Количество отменённых участий.</param>
+    /// <param name="RewardClaimed">Количество участий с обработанной наградой.</param>
+    /// <param name="PendingProofs">Количество доказательств на проверке.</param>
+    public sealed record QuestStatsDto(
+        long QuestId,
+        int TotalParticipants,
+        int InProgress,
+        int Completed,
+        int Cancelled,
+        int RewardClaimed,
+        int PendingProofs);
+
+    /// <summary>
     /// Шаг квеста в административном представлении.
     /// </summary>
     /// <param name="Id">Идентификатор шага.</param>

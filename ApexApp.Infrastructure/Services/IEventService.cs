@@ -24,6 +24,48 @@ public interface IEventService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Возвращает страницу мероприятий, на которые зарегистрирован пользователь,
+    /// включая прошедшие и отменённые регистрации.
+    /// </summary>
+    /// <param name="userId">Идентификатор пользователя.</param>
+    /// <param name="page">Номер страницы, начиная с 1.</param>
+    /// <param name="pageSize">Размер страницы.</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    Task<PagedResult<MyEventSummary>> GetMyAsync(
+        Guid userId,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Публикует мероприятие. Публикация уже опубликованного мероприятия идемпотентна.
+    /// </summary>
+    /// <param name="eventId">Идентификатор мероприятия.</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    Task<ServiceResult<Event>> PublishAsync(
+        long eventId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Отменяет мероприятие и отменяет все действующие регистрации.
+    /// Отмена невозможна после начала мероприятия или после подтверждения посещения.
+    /// </summary>
+    /// <param name="eventId">Идентификатор мероприятия.</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    Task<ServiceResult<Event>> CancelAsync(
+        long eventId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Архивирует мероприятие без отмены регистраций и наград.
+    /// </summary>
+    /// <param name="eventId">Идентификатор мероприятия.</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    Task<ServiceResult<Event>> ArchiveAsync(
+        long eventId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Возвращает детали мероприятия вместе с регистрацией пользователя.
     /// </summary>
     /// <param name="eventId">Идентификатор мероприятия.</param>

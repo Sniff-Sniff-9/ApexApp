@@ -1,4 +1,4 @@
-﻿namespace ApexApp.Infrastructure.Caching;
+namespace ApexApp.Infrastructure.Caching;
 
 /// <summary>
 /// Cache keys and time to live values for the cached read models.
@@ -82,6 +82,18 @@ public static class CacheKeys
     /// <param name="department">Department name.</param>
     public static string DepartmentUsers(string department) =>
         $"{UsersPrefix}department:{department.Trim().ToLowerInvariant()}";
+
+    /// <summary>Key for the user list of a department, keyed by identifier.</summary>
+    /// <param name="departmentId">Department identifier.</param>
+    public static string DepartmentUsersById(int departmentId) =>
+        $"{UsersPrefix}department-id:{departmentId}";
+
+    /// <summary>Cache key for the roles used to authorize a user; short-lived fallback.</summary>
+    /// <param name="userId">User identifier.</param>
+    public static string AuthRoles(Guid userId) => $"auth:roles:{userId}";
+
+    /// <summary>Time to live for cached authorization roles.</summary>
+    public static readonly TimeSpan AuthRolesTtl = TimeSpan.FromSeconds(30);
 
     /// <summary>Key for the engagement snapshot of a user.</summary>
     /// <param name="userId">User identifier.</param>

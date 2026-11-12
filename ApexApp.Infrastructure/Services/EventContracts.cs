@@ -14,6 +14,13 @@ public sealed record EventSummary(
     EventParticipant? Registration);
 
 /// <summary>
+/// Мероприятие вместе с регистрацией текущего пользователя для списка «мои мероприятия».
+/// </summary>
+/// <param name="Event">Мероприятие.</param>
+/// <param name="Registration">Регистрация текущего пользователя.</param>
+public sealed record MyEventSummary(Event Event, EventParticipant Registration);
+
+/// <summary>
 /// Детали мероприятия вместе с регистрацией текущего пользователя.
 /// </summary>
 /// <param name="Event">Мероприятие.</param>

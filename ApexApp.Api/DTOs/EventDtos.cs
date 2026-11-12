@@ -26,6 +26,39 @@ namespace ApexApp.Api.DTOs
         string? RegistrationStatus);
 
     /// <summary>
+    /// Мероприятие вместе с регистрацией текущего пользователя.
+    /// </summary>
+    /// <param name="Id">Идентификатор мероприятия.</param>
+    /// <param name="Title">Название мероприятия.</param>
+    /// <param name="Description">Описание мероприятия.</param>
+    /// <param name="StartAt">Дата и время начала.</param>
+    /// <param name="EndAt">Дата и время окончания.</param>
+    /// <param name="Location">Место проведения.</param>
+    /// <param name="MaxParticipants">Максимальное количество участников или <c>null</c>.</param>
+    /// <param name="RewardAmount">Размер награды за посещение.</param>
+    /// <param name="IsActive">Признак активности мероприятия.</param>
+    /// <param name="RegistrationId">Идентификатор регистрации.</param>
+    /// <param name="RegistrationStatus">Статус регистрации.</param>
+    /// <param name="RegisteredAt">Дата и время регистрации.</param>
+    /// <param name="AttendedAt">Дата и время подтверждения посещения.</param>
+    /// <param name="RewardClaimed">Признак того, что награда уже выдана.</param>
+    public sealed record MyEventDto(
+        long Id,
+        string Title,
+        string? Description,
+        DateTime StartAt,
+        DateTime EndAt,
+        string? Location,
+        int? MaxParticipants,
+        long RewardAmount,
+        bool IsActive,
+        long RegistrationId,
+        string RegistrationStatus,
+        DateTime RegisteredAt,
+        DateTime? AttendedAt,
+        bool RewardClaimed);
+
+    /// <summary>
     /// Участник мероприятия.
     /// </summary>
     /// <param name="Id">Идентификатор регистрации.</param>

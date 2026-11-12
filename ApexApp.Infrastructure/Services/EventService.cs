@@ -77,6 +77,179 @@ public sealed class EventService(
     }
 
     /// <inheritdoc />
+    public async Task<PagedResult<MyEventSummary>> GetMyAsync(
+        Guid userId,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(page, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);
+
+        var query = dbContext.EventParticipants
+            .AsNoTracking()
+            .Where(participant => participant.UserId == userId);
+
+        var totalCount = await query.CountAsync(cancellationToken);
+
+        var participants = await query
+            .Include(participant => participant.Event)
+            .OrderByDescending(participant => participant.Event.StartAt)
+            .ThenByDescending(participant => participant.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        var items = participants
+            .Select(participant => new MyEventSummary(participant.Event, participant))
+            .ToList();
+
+        return new PagedResult<MyEventSummary>(items, totalCount, page, pageSize);
+    }
+
+    /// <inheritdoc />
+    public async Task<ServiceResult<Event>> PublishAsync(
+        long eventId,
+        CancellationToken cancellationToken = default)
+    {
+        if (eventId <= 0)
+        {
+            return ServiceResult<Event>.Fail(400, "A valid event ID is required.");
+        }
+
+        var eventItem = await dbContext.Events
+            .FirstOrDefaultAsync(item => item.Id == eventId, cancellationToken);
+
+        if (eventItem is null)
+        {
+            return ServiceResult<Event>.Fail(404, "Event was not found.");
+        }
+
+        if (eventItem.EndAt < DateTime.UtcNow)
+        {
+            return ServiceResult<Event>.Fail(409, "Cannot publish an event that has already ended.");
+        }
+
+        if (eventItem.IsActive)
+        {
+            return ServiceResult<Event>.Ok(eventItem);
+        }
+
+        eventItem.IsActive = true;
+        eventItem.UpdatedAt = DateTime.UtcNow;
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return ServiceResult<Event>.Ok(eventItem);
+    }
+
+    /// <inheritdoc />
+    public async Task<ServiceResult<Event>> CancelAsync(
+        long eventId,
+        CancellationToken cancellationToken = default)
+    {
+        if (eventId <= 0)
+        {
+            return ServiceResult<Event>.Fail(400, "A valid event ID is required.");
+        }
+
+        var eventItem = await dbContext.Events
+            .FirstOrDefaultAsync(item => item.Id == eventId, cancellationToken);
+
+        if (eventItem is null)
+        {
+            return ServiceResult<Event>.Fail(404, "Event was not found.");
+        }
+
+        if (!eventItem.IsActive)
+        {
+            return ServiceResult<Event>.Ok(eventItem);
+        }
+
+        if (eventItem.StartAt <= DateTime.UtcNow)
+        {
+            return ServiceResult<Event>.Fail(
+                409,
+                "Cannot cancel an event that has already started.");
+        }
+
+        try
+        {
+            await using var databaseTransaction = await dbContext.Database
+                .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+
+            var hasConfirmedAttendance = await dbContext.EventParticipants
+                .AsNoTracking()
+                .AnyAsync(
+                    participant => participant.EventId == eventId
+                                   && (participant.Status == EventParticipantStatuses.Attended
+                                       || participant.RewardClaimed),
+                    cancellationToken);
+
+            if (hasConfirmedAttendance)
+            {
+                return ServiceResult<Event>.Fail(
+                    409,
+                    "Cannot cancel an event with confirmed attendance or granted rewards.");
+            }
+
+            eventItem.IsActive = false;
+            eventItem.UpdatedAt = DateTime.UtcNow;
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            await dbContext.EventParticipants
+                .Where(participant => participant.EventId == eventId
+                                      && participant.Status == EventParticipantStatuses.Registered)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(
+                        participant => participant.Status,
+                        EventParticipantStatuses.Cancelled),
+                    cancellationToken);
+
+            await databaseTransaction.CommitAsync(cancellationToken);
+
+            return ServiceResult<Event>.Ok(eventItem);
+        }
+        catch (Exception exception) when (DatabaseErrors.IsRetryableConflict(exception))
+        {
+            return ServiceResult<Event>.Fail(
+                409,
+                "The event cancellation conflicted with another request. Please retry.");
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<ServiceResult<Event>> ArchiveAsync(
+        long eventId,
+        CancellationToken cancellationToken = default)
+    {
+        if (eventId <= 0)
+        {
+            return ServiceResult<Event>.Fail(400, "A valid event ID is required.");
+        }
+
+        var eventItem = await dbContext.Events
+            .FirstOrDefaultAsync(item => item.Id == eventId, cancellationToken);
+
+        if (eventItem is null)
+        {
+            return ServiceResult<Event>.Fail(404, "Event was not found.");
+        }
+
+        if (eventItem.IsActive)
+        {
+            // Registration and reward history stay intact; only visibility changes.
+            eventItem.IsActive = false;
+            eventItem.UpdatedAt = DateTime.UtcNow;
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        return ServiceResult<Event>.Ok(eventItem);
+    }
+
+    /// <inheritdoc />
     public async Task<ServiceResult<EventDetailsResult>> GetDetailsAsync(
         long eventId,
         Guid userId,

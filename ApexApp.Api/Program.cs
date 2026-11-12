@@ -1,4 +1,4 @@
-﻿using ApexApp.Api.Authorization;
+using ApexApp.Api.Authorization;
 using ApexApp.Api.Caching;
 using ApexApp.Api.Diagnostics;
 using ApexApp.Api.Swagger;
@@ -34,6 +34,8 @@ builder.Services.AddDbContext<AppDbContext>((serviceProvider, options) =>
             npgsql.MapEnum<OrderStatus>("order_status");
             npgsql.MapEnum<TicketStatus>("ticket_status");
             npgsql.MapEnum<QuestStepCompletionType>("quest_step_completion_type");
+
+            npgsql.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery);
         });
 
     if (requestTimingEnabled)
@@ -46,6 +48,7 @@ builder.Services.AddDbContext<AppDbContext>((serviceProvider, options) =>
     options.AddInterceptors(
         new EngagementCacheInvalidationInterceptor(
             serviceProvider.GetRequiredService<ICacheService>()));
+
 });
 
 builder.Services.AddRequestTimingDiagnostics(builder.Configuration);
@@ -71,6 +74,8 @@ if (!string.IsNullOrWhiteSpace(connectionString))
 }
 
 builder.Services.AddScoped<IUserProfileService, UserProfileService>();
+builder.Services.AddScoped<IDepartmentService, DepartmentService>();
+builder.Services.AddScoped<IPositionService, PositionService>();
 builder.Services.AddScoped<IRoleManagementService, RoleManagementService>();
 builder.Services.AddScoped<IBalanceRepository, BalanceRepository>();
 builder.Services.AddScoped<ITransactionRepository, TransactionRepository>();
@@ -171,7 +176,28 @@ builder.Services.AddAuthorization(options =>
     {
         policy.RequireAuthenticatedUser();
         policy.AddRequirements(new ActiveUserRequirement());
-        policy.AddRequirements(new AnyRoleRequirement(RoleCodes.Admin, RoleCodes.SuperAdmin, RoleCodes.Manager));
+        policy.AddRequirements(new AnyRoleRequirement(RoleCodes.Admin, RoleCodes.SuperAdmin, RoleCodes.HumanResources));
+    });
+
+    options.AddPolicy(AppPolicies.ManageOrg, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(new ActiveUserRequirement());
+        policy.AddRequirements(new AnyRoleRequirement(RoleCodes.Admin, RoleCodes.SuperAdmin, RoleCodes.HumanResources));
+    });
+
+    options.AddPolicy(AppPolicies.ViewTeam, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(new ActiveUserRequirement());
+        policy.AddRequirements(new AnyRoleRequirement(RoleCodes.Manager, RoleCodes.Admin, RoleCodes.SuperAdmin, RoleCodes.HumanResources));
+    });
+
+    options.AddPolicy(AppPolicies.ManageTeam, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(new ActiveUserRequirement());
+        policy.AddRequirements(new AnyRoleRequirement(RoleCodes.Manager, RoleCodes.Admin, RoleCodes.SuperAdmin, RoleCodes.HumanResources));
     });
 
     options.AddPolicy(AppPolicies.ManageRoles, policy =>
