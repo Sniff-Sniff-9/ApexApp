@@ -1,4 +1,4 @@
-﻿using ApexApp.Domain.Entities;
+using ApexApp.Domain.Entities;
 using ApexApp.Infrastructure.Caching;
 using ApexApp.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -69,21 +69,66 @@ public sealed class OrderService : IOrderService
 
             var productsById = products.ToDictionary(p => p.Id);
 
+            // Варианты блокируются отдельным запросом: остаток варианта уменьшается
+            // в той же транзакции, поэтому конкурентная покупка не может его превысить.
+            var variantIds = cartItems
+                .Where(item => item.ProductVariantId.HasValue)
+                .Select(item => item.ProductVariantId!.Value)
+                .Distinct()
+                .ToArray();
+
+            var variants = variantIds.Length == 0
+                ? []
+                : await _dbContext.Set<ProductVariant>()
+                    .FromSqlInterpolated($"""
+                        SELECT *
+                        FROM public.product_variants
+                        WHERE id = ANY ({variantIds})
+                        ORDER BY id
+                        FOR UPDATE
+                        """)
+                    .ToListAsync(cancellationToken);
+
+            if (variants.Count != variantIds.Length)
+                return (false, 409, "One or more product variants are unavailable.", null, null);
+
+            var variantsById = variants.ToDictionary(variant => variant.Id);
+
             long total = 0;
 
             foreach (var item in cartItems)
             {
                 var product = productsById[item.ProductId];
+                var variant = item.ProductVariantId is int selectedVariantId
+                    ? variantsById.GetValueOrDefault(selectedVariantId)
+                    : null;
 
-                if (!product.IsActive || product.IsDigital)
-                    return (false, 409, $"Product '{product.Name}' is unavailable.", null, null);
+                if (item.ProductVariantId.HasValue && variant is null)
+                    return (false, 409, "One or more product variants are unavailable.", null, null);
 
-                if (product.Stock.HasValue && product.Stock.Value < item.Quantity)
-                    return (false, 409, $"Insufficient stock for '{product.Name}'.", null, null);
+                var selection = ProductVariantPricing.Evaluate(product, variant, item.Quantity);
+
+                switch (selection.Status)
+                {
+                    case ProductSelectionStatus.Ok:
+                        break;
+
+                    case ProductSelectionStatus.ProductUnavailable:
+                        return (false, 409, $"Product '{product.Name}' is unavailable.", null, null);
+
+                    case ProductSelectionStatus.VariantUnavailable:
+                        return (false, 409, $"Variant of '{product.Name}' is unavailable.", null, null);
+
+                    case ProductSelectionStatus.InsufficientStock:
+                        return (false, 409, DescribeStockShortage(product, variant), null, null);
+
+                    default:
+                        return (false, 400, "Cart contains an invalid quantity.", null, null);
+                }
 
                 try
                 {
-                    total = checked(total + checked(product.Price * item.Quantity));
+                    total = checked(total + checked(selection.UnitPrice * item.Quantity));
                 }
                 catch (OverflowException)
                 {
@@ -136,12 +181,18 @@ public sealed class OrderService : IOrderService
                 OrderItems = cartItems.Select(item =>
                 {
                     var product = productsById[item.ProductId];
+                    var variant = item.ProductVariantId is int selectedVariantId
+                        ? variantsById.GetValueOrDefault(selectedVariantId)
+                        : null;
 
                     return new OrderItem
                     {
                         ProductId = product.Id,
+                        Product = product,
+                        ProductVariantId = variant?.Id,
+                        ProductVariant = variant,
                         Quantity = item.Quantity,
-                        PriceAtPurchase = product.Price
+                        PriceAtPurchase = ProductVariantPricing.ResolveUnitPrice(product, variant)
                     };
                 }).ToList()
             };
@@ -153,8 +204,16 @@ public sealed class OrderService : IOrderService
             {
                 var product = productsById[item.ProductId];
 
-                if (product.Stock.HasValue)
+                if (item.ProductVariantId is int selectedVariantId
+                    && variantsById.TryGetValue(selectedVariantId, out var variant))
+                {
+                    // Остаток проверен выше в этой же транзакции, поэтому вычитание безопасно.
+                    variant.Stock -= item.Quantity;
+                }
+                else if (product.Stock.HasValue)
+                {
                     product.Stock -= item.Quantity;
+                }
 
                 product.UpdatedAt = now;
             }
@@ -239,6 +298,8 @@ public sealed class OrderService : IOrderService
             .Where(o => o.UserId == userId)
             .Include(o => o.OrderItems)
                 .ThenInclude(i => i.Product)
+            .Include(o => o.OrderItems)
+                .ThenInclude(i => i.ProductVariant)
             .OrderByDescending(o => o.CreatedAt)
             .ToListAsync(cancellationToken);
     }
@@ -253,6 +314,8 @@ public sealed class OrderService : IOrderService
             .Where(o => o.UserId == userId && o.Id == orderId)
             .Include(o => o.OrderItems)
                 .ThenInclude(i => i.Product)
+            .Include(o => o.OrderItems)
+                .ThenInclude(i => i.ProductVariant)
             .FirstOrDefaultAsync(cancellationToken);
     }
 
@@ -263,6 +326,8 @@ public sealed class OrderService : IOrderService
             .AsNoTracking()
             .Include(o => o.OrderItems)
                 .ThenInclude(i => i.Product)
+            .Include(o => o.OrderItems)
+                .ThenInclude(i => i.ProductVariant)
             .ToListAsync(cancellationToken);     
     }
 
@@ -353,6 +418,8 @@ public sealed class OrderService : IOrderService
             var order = await _dbContext.Set<Order>()
                 .Include(o => o.OrderItems)
                     .ThenInclude(i => i.Product)
+                .Include(o => o.OrderItems)
+                    .ThenInclude(i => i.ProductVariant)
                 .FirstOrDefaultAsync(
                     o => o.Id == orderId,
                     cancellationToken);
@@ -402,6 +469,31 @@ public sealed class OrderService : IOrderService
 
             foreach (var item in order.OrderItems)
             {
+                // Остаток возвращается туда же, откуда он был списан: вариант или товар.
+                if (item.ProductVariant is not null)
+                {
+                    try
+                    {
+                        item.ProductVariant.Stock = checked(
+                            item.ProductVariant.Stock + item.Quantity);
+                    }
+                    catch (OverflowException)
+                    {
+                        return (
+                            false,
+                            400,
+                            $"Stock exceeds the supported range for variant '{item.ProductVariant.Name}'.",
+                            null);
+                    }
+
+                    if (item.Product is not null)
+                    {
+                        item.Product.UpdatedAt = now;
+                    }
+
+                    continue;
+                }
+
                 if (item.Product is null)
                     continue;
 
@@ -459,4 +551,12 @@ public sealed class OrderService : IOrderService
                 null);
         }
     }
+
+    /// <summary>
+    /// Возвращает сообщение о нехватке остатка с указанием выбранного варианта.
+    /// </summary>
+    private static string DescribeStockShortage(Product product, ProductVariant? variant) =>
+        variant is null
+            ? $"Insufficient stock for '{product.Name}'."
+            : $"Insufficient stock for '{product.Name} / {variant.Name}'.";
 }

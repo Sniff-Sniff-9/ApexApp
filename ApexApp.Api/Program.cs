@@ -1,3 +1,4 @@
+using ApexApp.Api.Analytics;
 using ApexApp.Api.Authorization;
 using ApexApp.Api.Caching;
 using ApexApp.Api.Diagnostics;
@@ -7,6 +8,7 @@ using ApexApp.Infrastructure.Caching;
 using ApexApp.Infrastructure.Data;
 using ApexApp.Infrastructure.Repositories;
 using ApexApp.Infrastructure.Services;
+using ApexApp.Infrastructure.Services.Analytics;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
@@ -101,6 +103,26 @@ builder.Services.AddScoped<IEventService, EventService>();
 builder.Services.AddScoped<ISurveyService, SurveyService>();
 builder.Services.AddScoped<ISupportTicketService, SupportTicketService>();
 builder.Services.AddScoped<ProductVariantCategoryService>();
+
+// Аналитика: настройки, кеш-обёртка и сервисы отчётов. Все сервисы только читают данные.
+builder.Services.Configure<AnalyticsOptions>(
+    builder.Configuration.GetSection(AnalyticsOptions.SectionName));
+builder.Services.AddScoped<AnalyticsCache>();
+builder.Services.AddSingleton<IAnalyticsRangeFactory, AnalyticsRangeFactory>();
+builder.Services.AddScoped<IAnalyticsPopulationService, AnalyticsPopulationService>();
+builder.Services.AddScoped<IAnalyticsActivityRollupService, AnalyticsActivityRollupService>();
+builder.Services.AddScoped<IAnalyticsActivityAggregates, AnalyticsActivityAggregates>();
+builder.Services.AddScoped<IAnalyticsEngagementLoader, AnalyticsEngagementLoader>();
+builder.Services.AddScoped<IAnalyticsOverviewService, AnalyticsOverviewService>();
+builder.Services.AddScoped<IAnalyticsSeriesService, AnalyticsSeriesService>();
+builder.Services.AddScoped<IActivityAnalyticsService, ActivityAnalyticsService>();
+builder.Services.AddScoped<IRewardAnalyticsService, RewardAnalyticsService>();
+builder.Services.AddScoped<IEngagementAnalyticsService, EngagementAnalyticsService>();
+builder.Services.AddScoped<IDepartmentAnalyticsService, DepartmentAnalyticsService>();
+builder.Services.AddScoped<ICollaborationAnalyticsService, CollaborationAnalyticsService>();
+builder.Services.AddScoped<IAnalyticsInsightService, AnalyticsInsightService>();
+builder.Services.AddScoped<IAnalyticsHealthService, AnalyticsHealthService>();
+builder.Services.AddScoped<IAnalyticsScopeResolver, AnalyticsScopeResolver>();
 
 builder.Services
     .AddControllers()
@@ -261,6 +283,51 @@ builder.Services.AddAuthorization(options =>
         policy.RequireAuthenticatedUser();
         policy.AddRequirements(new ActiveUserRequirement());
         policy.AddRequirements(new AnyRoleRequirement(RoleCodes.Admin, RoleCodes.SuperAdmin, RoleCodes.Merchandiser));
+    });
+
+    // Аналитика платформы и отделов: руководитель видит только свой отдел,
+    // остальные роли с этой политикой видят все отделы.
+    options.AddPolicy(AppPolicies.ViewAnalytics, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(new ActiveUserRequirement());
+        policy.AddRequirements(new AnyRoleRequirement(
+            RoleCodes.Manager,
+            RoleCodes.Admin,
+            RoleCodes.SuperAdmin,
+            RoleCodes.HumanResources));
+    });
+
+    options.AddPolicy(AppPolicies.ViewRewardAnalytics, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(new ActiveUserRequirement());
+        policy.AddRequirements(new AnyRoleRequirement(
+            RoleCodes.Admin,
+            RoleCodes.SuperAdmin,
+            RoleCodes.HumanResources,
+            RoleCodes.Merchandiser));
+    });
+
+    // Персональная аналитика сотрудников: только роли, которым разрешено видеть людей.
+    options.AddPolicy(AppPolicies.ViewEmployeeAnalytics, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(new ActiveUserRequirement());
+        policy.AddRequirements(new AnyRoleRequirement(
+            RoleCodes.Admin,
+            RoleCodes.SuperAdmin,
+            RoleCodes.HumanResources));
+    });
+
+    options.AddPolicy(AppPolicies.ViewCollaborationAnalytics, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(new ActiveUserRequirement());
+        policy.AddRequirements(new AnyRoleRequirement(
+            RoleCodes.Admin,
+            RoleCodes.SuperAdmin,
+            RoleCodes.HumanResources));
     });
 });
 

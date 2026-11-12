@@ -1,6 +1,8 @@
-﻿using ApexApp.Domain.Entities;
+using ApexApp.Domain.Entities;
 using ApexApp.Infrastructure.Caching;
+using ApexApp.Infrastructure.Common;
 using ApexApp.Infrastructure.Repositories;
+using Microsoft.EntityFrameworkCore;
 
 namespace ApexApp.Infrastructure.Services;
 
@@ -229,7 +231,9 @@ public sealed class ProductService(
             throw new ArgumentException("Price cannot be negative.");
 
         existingVariant.Name = variant.Name;
-        existingVariant.Category = variant.Category;
+        // Присваивается идентификатор категории: сущность категории не загружена,
+        // а присваивание навигации обнуляло категорию при каждом обновлении.
+        existingVariant.CategoryId = variant.CategoryId;
         existingVariant.ImageUrl = variant.ImageUrl;
         existingVariant.Price = variant.Price;
         existingVariant.Stock = variant.Stock;
@@ -245,6 +249,15 @@ public sealed class ProductService(
         if (variant == null)
             return false;
 
-        return await repository.DeleteVariantAsync(variant);
+        try
+        {
+            return await repository.DeleteVariantAsync(variant);
+        }
+        catch (DbUpdateException exception) when (DatabaseErrors.IsForeignKeyViolation(exception))
+        {
+            // Вариант уже продан или лежит в корзине: физическое удаление нарушило бы историю.
+            throw new InvalidOperationException(
+                "Cannot delete a variant that is referenced by carts or orders.");
+        }
     }
 }

@@ -99,4 +99,28 @@ public static class CacheKeys
     /// <param name="userId">User identifier.</param>
     public static string Engagement(Guid userId) => $"{EngagementPrefix}user:{userId}";
 
+    /// <summary>Group prefix for every analytics cache entry.</summary>
+    public const string AnalyticsPrefix = "analytics:";
+
+    /// <summary>Key for cached analytics reference data (headcount, departments, catalog).</summary>
+    /// <param name="name">Reference data name.</param>
+    public static string AnalyticsReference(string name) =>
+        $"{AnalyticsPrefix}ref:{name.Trim().ToLowerInvariant()}";
+
+    /// <summary>Key for the per-user activity rollup of a range.</summary>
+    /// <param name="rangeTag">Stable range tag.</param>
+    public static string AnalyticsActivityRollup(string rangeTag) =>
+        $"{AnalyticsPrefix}rollup:{rangeTag}";
+
+    /// <summary>
+    /// Key for an analytics projection. The scope, range, filters and the request
+    /// instant bucket are all part of the key, so a manager never receives another
+    /// department's cached payload.
+    /// </summary>
+    /// <param name="scope">Projection name.</param>
+    /// <param name="rangeTag">Stable range tag.</param>
+    /// <param name="filters">Normalized filter segment.</param>
+    /// <param name="instantBucket">Request instant truncated to a cache bucket.</param>
+    public static string Analytics(string scope, string rangeTag, string filters, string instantBucket) =>
+        $"{AnalyticsPrefix}{scope.Trim().ToLowerInvariant()}:{rangeTag}:{filters}:{instantBucket}";
 }

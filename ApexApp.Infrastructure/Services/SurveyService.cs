@@ -831,9 +831,12 @@ public sealed class SurveyService : ISurveyService
             .AsNoTracking()
             .CountAsync(response => response.SurveyId == surveyId, cancellationToken);
 
+        // Проецируются только нужные столбцы: полные сущности ответов не материализуются,
+        // поэтому память зависит от объёма ответов, а не от размера строки.
         var answers = await dbContext.SurveyAnswers
             .AsNoTracking()
             .Where(answer => answer.SurveyId == surveyId)
+            .Select(answer => new { answer.QuestionId, answer.Answer })
             .ToListAsync(cancellationToken);
 
         var answersByQuestion = answers

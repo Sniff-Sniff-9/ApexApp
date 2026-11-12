@@ -1,4 +1,4 @@
-﻿using ApexApp.Api.Authorization;
+using ApexApp.Api.Authorization;
 using ApexApp.Api.Extensions;
 using ApexApp.Domain.Entities;
 using ApexApp.Infrastructure.Services;
@@ -72,6 +72,8 @@ public sealed class OrdersController : ApiControllerBase
             Items = order.OrderItems.Select(i => new
             {
                 i.ProductId,
+                ProductVariantId = i.ProductVariantId,
+                VariantName = i.ProductVariant?.Name,
                 i.Quantity,
                 i.PriceAtPurchase
             }),
@@ -155,6 +157,9 @@ public sealed class OrdersController : ApiControllerBase
                 i.Id,
                 i.ProductId,
                 ProductName = i.Product?.Name,
+                i.ProductVariantId,
+                VariantName = i.ProductVariant?.Name,
+                VariantImageUrl = i.ProductVariant?.ImageUrl,
                 i.Quantity,
                 i.PriceAtPurchase
             })
@@ -178,6 +183,9 @@ public sealed class OrdersController : ApiControllerBase
                 i.Id,
                 i.ProductId,
                 ProductName = i.Product?.Name,
+                i.ProductVariantId,
+                VariantName = i.ProductVariant?.Name,
+                VariantImageUrl = i.ProductVariant?.ImageUrl,
                 i.Quantity,
                 i.PriceAtPurchase
             })

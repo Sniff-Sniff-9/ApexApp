@@ -16,4 +16,16 @@ public static class AppPolicies
     public const string ManageSupport = "ManageSupport";
     public const string ManageOrders = "ManageOrders";
     public const string ManageCatalog = "ManageCatalog";
+
+    /// <summary>Доступ к агрегированной аналитике платформы и отделов.</summary>
+    public const string ViewAnalytics = "ViewAnalytics";
+
+    /// <summary>Доступ к аналитике вознаграждений и каталога.</summary>
+    public const string ViewRewardAnalytics = "ViewRewardAnalytics";
+
+    /// <summary>Доступ к персональной аналитике сотрудников.</summary>
+    public const string ViewEmployeeAnalytics = "ViewEmployeeAnalytics";
+
+    /// <summary>Доступ к аналитике межотдельского взаимодействия.</summary>
+    public const string ViewCollaborationAnalytics = "ViewCollaborationAnalytics";
 }

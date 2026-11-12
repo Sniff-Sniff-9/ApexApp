@@ -1,4 +1,4 @@
-﻿using ApexApp.Domain.Entities;
+using ApexApp.Domain.Entities;
 using ApexApp.Infrastructure.Repositories;
 using ApexApp.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -16,6 +16,7 @@ public sealed class CartRepository(
             .AsNoTracking()
             .Where(x => x.UserId == userId)
             .Include(x => x.Product)
+            .Include(x => x.ProductVariant)
             .OrderBy(x => x.AddedAt)
             .ToListAsync(cancellationToken);
     }

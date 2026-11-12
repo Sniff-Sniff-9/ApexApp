@@ -1,4 +1,4 @@
-﻿using ApexApp.Api.Authorization;
+using ApexApp.Api.Authorization;
 using ApexApp.Api.Extensions;
 using ApexApp.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -44,16 +44,25 @@ public sealed class CartController : ApiControllerBase
         var items = await _cartService.GetAsync(
             userId.Value, cancellationToken);
 
-        return Ok(items.Select(x => new
+        return Ok(items.Select(x =>
         {
-            x.Id,
-            x.ProductId,
-            ProductName = x.Product.Name,
-            x.Product.ImageUrl,
-            UnitPrice = x.Product.Price,
-            x.Quantity,
-            Total = (decimal)x.Product.Price * x.Quantity,
-            x.AddedAt
+            // Цена и остаток берутся из БД: вариант может иметь собственную цену.
+            var unitPrice = ProductVariantPricing.ResolveUnitPrice(x.Product, x.ProductVariant);
+
+            return new
+            {
+                x.Id,
+                x.ProductId,
+                ProductName = x.Product.Name,
+                x.Product.ImageUrl,
+                x.ProductVariantId,
+                VariantName = x.ProductVariant?.Name,
+                VariantImageUrl = x.ProductVariant?.ImageUrl,
+                UnitPrice = unitPrice,
+                x.Quantity,
+                Total = (decimal)unitPrice * x.Quantity,
+                x.AddedAt
+            };
         }));
     }
 
@@ -74,7 +83,7 @@ public sealed class CartController : ApiControllerBase
             return Unauthorized();
 
         var result = await _cartService.AddAsync(
-            userId.Value, request.ProductId, request.Quantity,
+            userId.Value, request.ProductId, request.VariantId, request.Quantity,
             cancellationToken);
 
         if (!result.Success)
@@ -102,7 +111,7 @@ public sealed class CartController : ApiControllerBase
             return Unauthorized();
 
         var result = await _cartService.UpdateAsync(
-            userId.Value, id, request.Quantity, cancellationToken);
+            userId.Value, id, request.VariantId, request.Quantity, cancellationToken);
 
         if (!result.Success)
         {

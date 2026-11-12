@@ -1,4 +1,4 @@
-﻿using ApexApp.Api.Authorization;
+using ApexApp.Api.Authorization;
 using ApexApp.Api.DTOs;
 using ApexApp.Domain.Entities;
 using ApexApp.Infrastructure.Services;
@@ -336,15 +336,31 @@ public sealed class ProductsController : ApiControllerBase
         });
     }
 
+    /// <summary>
+    /// Удалить вариант товара.
+    /// </summary>
+    /// <param name="productId">Идентификатор товара.</param>
+    /// <param name="variantId">Идентификатор варианта.</param>
+    /// <response code="204">Вариант удалён.</response>
+    /// <response code="404">Вариант не найден.</response>
+    /// <response code="409">Вариант используется в корзинах или заказах.</response>
     [HttpDelete("{productId}/variants/{variantId}")]
     public async Task<IActionResult> DeleteVariant(int productId, int variantId)
     {
-        var deleted = await _productService.DeleteVariantAsync(productId, variantId);
+        try
+        {
+            var deleted = await _productService.DeleteVariantAsync(productId, variantId);
 
-        if (!deleted)
-            return NotFound();
+            if (!deleted)
+                return NotFound();
 
-        return NoContent();
+            return NoContent();
+        }
+        catch (InvalidOperationException exception)
+        {
+            // Вариант уже используется в корзинах или заказах: удаление нарушило бы историю.
+            return Conflict(new { message = exception.Message });
+        }
     }
 
     /// <summary>

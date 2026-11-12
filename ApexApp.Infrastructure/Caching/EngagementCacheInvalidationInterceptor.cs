@@ -47,9 +47,23 @@ public sealed class EngagementCacheInvalidationInterceptor(ICacheService cache) 
         }
 
         var userIds = new HashSet<Guid>();
+        var analyticsAffected = false;
 
         foreach (var entry in changed)
         {
+            analyticsAffected |= entry.Entity is EventParticipant
+                or QuestParticipation
+                or SurveyResponse
+                or Thank
+                or QuestStepCompletion
+                or Order
+                or OrderItem
+                or Product
+                or Event
+                or Quest
+                or Survey
+                or User;
+
             switch (entry.Entity)
             {
                 case EventParticipant participant:
@@ -75,6 +89,13 @@ public sealed class EngagementCacheInvalidationInterceptor(ICacheService cache) 
         foreach (var userId in userIds)
         {
             cache.Remove(CacheKeys.Engagement(userId));
+        }
+
+        // Аналитика строится из этих же данных; короткие TTL не гарантируют
+        // свежесть после записи, поэтому кеш отчётов сбрасывается сразу.
+        if (analyticsAffected)
+        {
+            cache.RemoveByPrefix(CacheKeys.AnalyticsPrefix);
         }
     }
 }

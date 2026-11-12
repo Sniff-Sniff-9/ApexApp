@@ -523,4 +523,6 @@ public sealed class UserProfileService : IUserProfileService
 
         return ServiceResult<CurrentUserProfile>.Ok(profile!);
     }
+
+
 }

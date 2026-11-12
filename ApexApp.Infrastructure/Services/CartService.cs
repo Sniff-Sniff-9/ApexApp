@@ -1,10 +1,15 @@
-﻿using ApexApp.Domain.Entities;
+using ApexApp.Domain.Entities;
+using ApexApp.Infrastructure.Common;
 using ApexApp.Infrastructure.Data;
 using ApexApp.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 
 namespace ApexApp.Infrastructure.Services;
 
+/// <summary>
+/// Корзина пользователя. Цена и остаток всегда вычисляются по данным БД:
+/// клиент передаёт только идентификаторы товара и варианта, но не цену.
+/// </summary>
 public sealed class CartService(
     CartRepository cartRepository,
     AppDbContext dbContext) : ICartService
@@ -20,6 +25,7 @@ public sealed class CartService(
     public async Task<(bool Success, string? Error)> AddAsync(
         Guid userId,
         int productId,
+        int? variantId,
         int quantity,
         CancellationToken cancellationToken = default)
     {
@@ -28,28 +34,40 @@ public sealed class CartService(
 
         var product = await dbContext.Set<Product>()
             .AsNoTracking()
-            .FirstOrDefaultAsync(
-                p => p.Id == productId &&
-                     p.IsActive &&
-                     !p.IsDigital,
-                cancellationToken);
+            .FirstOrDefaultAsync(p => p.Id == productId, cancellationToken);
 
         if (product is null)
             return (false, "Product is unavailable.");
 
+        var (variant, variantError) = await LoadVariantAsync(
+            productId,
+            variantId,
+            cancellationToken);
+
+        if (variantError is not null)
+            return (false, variantError);
+
         var item = await cartRepository.GetByUserAndProductAsync(
             userId, productId, cancellationToken);
+
+        // Ограничение корзины допускает одну строку на товар, поэтому смена варианта
+        // должна выполняться через обновление строки, а не молчаливой перезаписью.
+        if (item is not null && item.ProductVariantId != variant?.Id)
+        {
+            return (false,
+                "The cart already contains this product with a different variant selection. " +
+                "Update or remove the existing item first.");
+        }
 
         var newQuantity = (long)(item?.Quantity ?? 0) + quantity;
 
         if (newQuantity > int.MaxValue)
             return (false, "Quantity exceeds the supported range.");
 
-        if (product.Stock.HasValue &&
-            newQuantity > product.Stock.Value)
-        {
-            return (false, "Requested quantity exceeds available stock.");
-        }
+        var selection = ProductVariantPricing.Evaluate(product, variant, (int)newQuantity);
+
+        if (!selection.IsValid)
+            return (false, Describe(selection.Status));
 
         if (item is null)
         {
@@ -57,6 +75,7 @@ public sealed class CartService(
             {
                 UserId = userId,
                 ProductId = productId,
+                ProductVariantId = variant?.Id,
                 Quantity = quantity,
                 AddedAt = DateTime.UtcNow
             }, cancellationToken);
@@ -66,7 +85,14 @@ public sealed class CartService(
             item.Quantity = (int)newQuantity;
         }
 
-        await cartRepository.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await cartRepository.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception) when (DatabaseErrors.IsUniqueViolation(exception))
+        {
+            return (false, "The cart was updated concurrently. Please retry.");
+        }
 
         return (true, null);
     }
@@ -74,6 +100,7 @@ public sealed class CartService(
     public async Task<(bool Success, string? Error)> UpdateAsync(
         Guid userId,
         long itemId,
+        int? variantId,
         int quantity,
         CancellationToken cancellationToken = default)
     {
@@ -88,21 +115,38 @@ public sealed class CartService(
 
         var product = await dbContext.Set<Product>()
             .AsNoTracking()
-            .FirstOrDefaultAsync(
-                p => p.Id == item.ProductId &&
-                     p.IsActive &&
-                     !p.IsDigital,
-                cancellationToken);
+            .FirstOrDefaultAsync(p => p.Id == item.ProductId, cancellationToken);
 
         if (product is null)
             return (false, "Product is unavailable.");
 
-        if (product.Stock.HasValue && quantity > product.Stock.Value)
-            return (false, "Requested quantity exceeds available stock.");
+        // Отсутствие variantId в запросе означает «оставить текущий вариант».
+        var targetVariantId = variantId ?? item.ProductVariantId;
+
+        var (variant, variantError) = await LoadVariantAsync(
+            product.Id,
+            targetVariantId,
+            cancellationToken);
+
+        if (variantError is not null)
+            return (false, variantError);
+
+        var selection = ProductVariantPricing.Evaluate(product, variant, quantity);
+
+        if (!selection.IsValid)
+            return (false, Describe(selection.Status));
 
         item.Quantity = quantity;
+        item.ProductVariantId = variant?.Id;
 
-        await cartRepository.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await cartRepository.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception) when (DatabaseErrors.IsUniqueViolation(exception))
+        {
+            return (false, "The cart was updated concurrently. Please retry.");
+        }
 
         return (true, null);
     }
@@ -127,4 +171,40 @@ public sealed class CartService(
 
         return (true, null);
     }
+
+    private async Task<(ProductVariant? Variant, string? Error)> LoadVariantAsync(
+        int productId,
+        int? variantId,
+        CancellationToken cancellationToken)
+    {
+        if (variantId is not int id)
+        {
+            return (null, null);
+        }
+
+        if (id <= 0)
+        {
+            return (null, "Variant was not found for this product.");
+        }
+
+        var variant = await dbContext.Set<ProductVariant>()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+
+        // Проверка принадлежности обязательна: идентификатор варианта приходит от клиента.
+        if (variant is null || variant.ProductId != productId)
+        {
+            return (null, "Variant was not found for this product.");
+        }
+
+        return (variant, null);
+    }
+
+    private static string Describe(ProductSelectionStatus status) => status switch
+    {
+        ProductSelectionStatus.QuantityInvalid => "Invalid quantity.",
+        ProductSelectionStatus.VariantUnavailable => "Variant is unavailable for this product.",
+        ProductSelectionStatus.InsufficientStock => "Requested quantity exceeds available stock.",
+        _ => "Product is unavailable."
+    };
 }
