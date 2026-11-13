@@ -566,6 +566,232 @@ namespace ApexApp.Infrastructure.Migrations
                     b.ToTable("products", (string)null);
                 });
 
+            modelBuilder.Entity("ApexApp.Domain.Entities.ProductBadge", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AssignmentType")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("manual")
+                        .HasColumnName("assignment_type");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("code");
+
+                    b.Property<string>("Color")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(7)
+                        .HasColumnType("character varying(7)")
+                        .HasDefaultValue("#808080")
+                        .HasColumnName("color");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("name");
+
+                    b.Property<int>("SortOrder")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("sort_order");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.HasKey("Id")
+                        .HasName("product_badges_pkey");
+
+                    b.HasIndex("Code")
+                        .IsUnique()
+                        .HasDatabaseName("product_badges_code_key");
+
+                    b.ToTable("product_badges", (string)null);
+                });
+
+            modelBuilder.Entity("ApexApp.Domain.Entities.ProductBadgeAssignment", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("BadgeId")
+                        .HasColumnType("integer")
+                        .HasColumnName("badge_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<DateTime?>("EndsAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ends_at");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("integer")
+                        .HasColumnName("product_id");
+
+                    b.Property<int?>("ProductVariantId")
+                        .HasColumnType("integer")
+                        .HasColumnName("product_variant_id");
+
+                    b.Property<DateTime?>("StartsAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("starts_at");
+
+                    b.HasKey("Id")
+                        .HasName("product_badge_assignments_pkey");
+
+                    b.HasIndex("BadgeId")
+                        .HasDatabaseName("product_badge_assignments_badge_id_idx");
+
+                    b.HasIndex("ProductId")
+                        .HasDatabaseName("product_badge_assignments_product_id_idx");
+
+                    b.HasIndex("ProductVariantId")
+                        .HasDatabaseName("product_badge_assignments_product_variant_id_idx");
+
+                    b.HasIndex("ProductVariantId", "ProductId");
+
+                    b.ToTable("product_badge_assignments", (string)null);
+                });
+
+            modelBuilder.Entity("ApexApp.Domain.Entities.ProductBadgeSetting", b =>
+                {
+                    b.Property<int>("BadgeId")
+                        .HasColumnType("integer")
+                        .HasColumnName("badge_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<int?>("DurationDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("duration_days");
+
+                    b.Property<bool>("IsEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_enabled");
+
+                    b.Property<int?>("PeriodDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("period_days");
+
+                    b.Property<long?>("Threshold")
+                        .HasColumnType("bigint")
+                        .HasColumnName("threshold");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.HasKey("BadgeId")
+                        .HasName("product_badge_settings_pkey");
+
+                    b.ToTable("product_badge_settings", (string)null);
+                });
+
+            modelBuilder.Entity("ApexApp.Domain.Entities.ProductDiscount", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<int>("DiscountPercent")
+                        .HasColumnType("integer")
+                        .HasColumnName("discount_percent");
+
+                    b.Property<DateTime?>("EndsAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ends_at");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("integer")
+                        .HasColumnName("product_id");
+
+                    b.Property<int?>("ProductVariantId")
+                        .HasColumnType("integer")
+                        .HasColumnName("product_variant_id");
+
+                    b.Property<DateTime>("StartsAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("starts_at");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.HasKey("Id")
+                        .HasName("product_discounts_pkey");
+
+                    b.HasIndex("ProductId")
+                        .HasDatabaseName("product_discounts_product_id_idx");
+
+                    b.HasIndex("ProductVariantId")
+                        .HasDatabaseName("product_discounts_product_variant_id_idx");
+
+                    b.HasIndex("ProductVariantId", "ProductId");
+
+                    b.ToTable("product_discounts", (string)null);
+                });
+
             modelBuilder.Entity("ApexApp.Domain.Entities.ProductVariant", b =>
                 {
                     b.Property<int>("Id")
@@ -610,6 +836,9 @@ namespace ApexApp.Infrastructure.Migrations
                         .HasColumnName("stock");
 
                     b.HasKey("Id");
+
+                    b.HasAlternateKey("Id", "ProductId")
+                        .HasName("product_variants_id_product_id_key");
 
                     b.HasIndex("CategoryId");
 
@@ -1641,6 +1870,69 @@ namespace ApexApp.Infrastructure.Migrations
                     b.Navigation("Category");
                 });
 
+            modelBuilder.Entity("ApexApp.Domain.Entities.ProductBadgeAssignment", b =>
+                {
+                    b.HasOne("ApexApp.Domain.Entities.ProductBadge", "Badge")
+                        .WithMany("Assignments")
+                        .HasForeignKey("BadgeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("product_badge_assignments_badge_id_fkey");
+
+                    b.HasOne("ApexApp.Domain.Entities.Product", "Product")
+                        .WithMany("BadgeAssignments")
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("product_badge_assignments_product_id_fkey");
+
+                    b.HasOne("ApexApp.Domain.Entities.ProductVariant", "ProductVariant")
+                        .WithMany("BadgeAssignments")
+                        .HasForeignKey("ProductVariantId", "ProductId")
+                        .HasPrincipalKey("Id", "ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .HasConstraintName("product_badge_assignments_product_variant_id_product_id_fkey");
+
+                    b.Navigation("Badge");
+
+                    b.Navigation("Product");
+
+                    b.Navigation("ProductVariant");
+                });
+
+            modelBuilder.Entity("ApexApp.Domain.Entities.ProductBadgeSetting", b =>
+                {
+                    b.HasOne("ApexApp.Domain.Entities.ProductBadge", "Badge")
+                        .WithOne("Settings")
+                        .HasForeignKey("ApexApp.Domain.Entities.ProductBadgeSetting", "BadgeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("product_badge_settings_badge_id_fkey");
+
+                    b.Navigation("Badge");
+                });
+
+            modelBuilder.Entity("ApexApp.Domain.Entities.ProductDiscount", b =>
+                {
+                    b.HasOne("ApexApp.Domain.Entities.Product", "Product")
+                        .WithMany("Discounts")
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("product_discounts_product_id_fkey");
+
+                    b.HasOne("ApexApp.Domain.Entities.ProductVariant", "ProductVariant")
+                        .WithMany("Discounts")
+                        .HasForeignKey("ProductVariantId", "ProductId")
+                        .HasPrincipalKey("Id", "ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .HasConstraintName("product_discounts_product_variant_id_product_id_fkey");
+
+                    b.Navigation("Product");
+
+                    b.Navigation("ProductVariant");
+                });
+
             modelBuilder.Entity("ApexApp.Domain.Entities.ProductVariant", b =>
                 {
                     b.HasOne("ApexApp.Domain.Entities.ProductVariantCategory", "Category")
@@ -1980,11 +2272,29 @@ namespace ApexApp.Infrastructure.Migrations
 
             modelBuilder.Entity("ApexApp.Domain.Entities.Product", b =>
                 {
+                    b.Navigation("BadgeAssignments");
+
                     b.Navigation("CartItems");
+
+                    b.Navigation("Discounts");
 
                     b.Navigation("OrderItems");
 
                     b.Navigation("ProductVariants");
+                });
+
+            modelBuilder.Entity("ApexApp.Domain.Entities.ProductBadge", b =>
+                {
+                    b.Navigation("Assignments");
+
+                    b.Navigation("Settings");
+                });
+
+            modelBuilder.Entity("ApexApp.Domain.Entities.ProductVariant", b =>
+                {
+                    b.Navigation("BadgeAssignments");
+
+                    b.Navigation("Discounts");
                 });
 
             modelBuilder.Entity("ApexApp.Domain.Entities.ProductVariantCategory", b =>

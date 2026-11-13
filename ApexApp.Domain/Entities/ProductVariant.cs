@@ -25,5 +25,11 @@ namespace ApexApp.Domain.Entities
         public ProductVariantCategory Category { get; set; } = null!;
 
         public virtual Product Product { get; set; } = null!;
+
+        public virtual ICollection<ProductDiscount> Discounts { get; set; }
+    = new List<ProductDiscount>();
+
+        public virtual ICollection<ProductBadgeAssignment> BadgeAssignments { get; set; }
+            = new List<ProductBadgeAssignment>();
     }
 }

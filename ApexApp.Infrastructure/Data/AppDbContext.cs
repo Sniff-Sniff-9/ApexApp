@@ -72,6 +72,14 @@ public partial class AppDbContext : DbContext
 
     public DbSet<ProductVariantCategory> ProductVariantCategories { get; set; }
 
+    public virtual DbSet<ProductDiscount> ProductDiscounts { get; set; }
+
+    public virtual DbSet<ProductBadge> ProductBadges { get; set; }
+
+    public virtual DbSet<ProductBadgeAssignment> ProductBadgeAssignments { get; set; }
+
+    public virtual DbSet<ProductBadgeSetting> ProductBadgeSettings { get; set; }
+
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -998,6 +1006,8 @@ public partial class AppDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasIndex(v => v.ProductId);
+            entity.HasAlternateKey(v => new { v.Id, v.ProductId })
+    .HasName("product_variants_id_product_id_key");
         });
 
         modelBuilder.Entity<Department>(entity =>
@@ -1083,6 +1093,220 @@ public partial class AppDbContext : DbContext
                 .WithOne(e => e.Category)
                 .HasForeignKey(e => e.CategoryId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ProductDiscount>(entity =>
+        {
+            entity.HasKey(e => e.Id)
+                .HasName("product_discounts_pkey");
+
+            entity.ToTable("product_discounts");
+
+            entity.Property(e => e.Id)
+                .HasColumnName("id")
+                .UseIdentityByDefaultColumn();
+
+            entity.Property(e => e.ProductId)
+                .IsRequired()
+                .HasColumnName("product_id");
+
+            entity.Property(e => e.ProductVariantId)
+                .HasColumnName("product_variant_id");
+
+            entity.Property(e => e.DiscountPercent)
+                .IsRequired()
+                .HasColumnName("discount_percent");
+
+            entity.Property(e => e.StartsAt)
+                .HasColumnName("starts_at");
+
+            entity.Property(e => e.EndsAt)
+                .HasColumnName("ends_at");
+
+            entity.Property(e => e.IsActive)
+                .HasDefaultValue(true)
+                .HasColumnName("is_active");
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("created_at");
+
+            entity.Property(e => e.UpdatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("updated_at");
+
+            entity.HasOne(e => e.Product)
+                .WithMany(v => v.Discounts)
+                .HasForeignKey(e => e.ProductId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("product_discounts_product_id_fkey");
+
+            entity.HasOne(e => e.ProductVariant)
+    .WithMany(v => v.Discounts)
+    .HasForeignKey(e => new { e.ProductVariantId, e.ProductId })
+    .HasPrincipalKey(v => new { v.Id, v.ProductId })
+    .OnDelete(DeleteBehavior.Cascade)
+    .HasConstraintName("product_discounts_product_variant_id_product_id_fkey");
+
+            entity.HasIndex(e => e.ProductId)
+                .HasDatabaseName("product_discounts_product_id_idx");
+
+            entity.HasIndex(e => e.ProductVariantId)
+                .HasDatabaseName("product_discounts_product_variant_id_idx");
+        });
+
+        modelBuilder.Entity<ProductBadge>(entity =>
+        {
+            entity.HasKey(e => e.Id)
+                .HasName("product_badges_pkey");
+
+            entity.ToTable("product_badges");
+
+            entity.Property(e => e.Id)
+                .HasColumnName("id")
+                .UseIdentityByDefaultColumn();
+
+            entity.Property(e => e.Code)
+                .IsRequired()
+                .HasMaxLength(50)
+                .HasColumnName("code");
+
+            entity.Property(e => e.Name)
+                .IsRequired()
+                .HasMaxLength(100)
+                .HasColumnName("name");
+
+            entity.Property(e => e.Color)
+                .IsRequired()
+                .HasMaxLength(7)
+                .HasDefaultValue("#808080")
+                .HasColumnName("color");
+
+            entity.Property(e => e.AssignmentType)
+                .IsRequired()
+                .HasMaxLength(20)
+                .HasDefaultValue("manual")
+                .HasColumnName("assignment_type");
+
+            entity.Property(e => e.IsActive)
+                .HasDefaultValue(true)
+                .HasColumnName("is_active");
+
+            entity.Property(e => e.SortOrder)
+                .HasDefaultValue(0)
+                .HasColumnName("sort_order");
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("created_at");
+
+            entity.Property(e => e.UpdatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("updated_at");
+
+            entity.HasIndex(e => e.Code)
+                .IsUnique()
+                .HasDatabaseName("product_badges_code_key");
+        });
+
+        modelBuilder.Entity<ProductBadgeAssignment>(entity =>
+        {
+            entity.HasKey(e => e.Id)
+                .HasName("product_badge_assignments_pkey");
+
+            entity.ToTable("product_badge_assignments");
+
+            entity.Property(e => e.Id)
+                .HasColumnName("id")
+                .UseIdentityByDefaultColumn();
+
+            entity.Property(e => e.ProductId)
+                .IsRequired()
+                .HasColumnName("product_id");
+
+            entity.Property(e => e.ProductVariantId)
+                .HasColumnName("product_variant_id");
+
+            entity.Property(e => e.BadgeId)
+                .IsRequired()
+                .HasColumnName("badge_id");
+
+            entity.Property(e => e.StartsAt)
+                .HasColumnName("starts_at");
+
+            entity.Property(e => e.EndsAt)
+                .HasColumnName("ends_at");
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("created_at");
+
+            entity.HasOne(e => e.Product)
+                .WithMany(v => v.BadgeAssignments)
+                .HasForeignKey(e => e.ProductId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("product_badge_assignments_product_id_fkey");
+
+            entity.HasOne(e => e.ProductVariant)
+    .WithMany(v => v.BadgeAssignments)
+    .HasForeignKey(e => new { e.ProductVariantId, e.ProductId })
+    .HasPrincipalKey(v => new { v.Id, v.ProductId })
+    .OnDelete(DeleteBehavior.Cascade)
+    .HasConstraintName("product_badge_assignments_product_variant_id_product_id_fkey");
+
+            entity.HasOne(e => e.Badge)
+                .WithMany(e => e.Assignments)
+                .HasForeignKey(e => e.BadgeId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("product_badge_assignments_badge_id_fkey");
+
+            entity.HasIndex(e => e.BadgeId)
+                .HasDatabaseName("product_badge_assignments_badge_id_idx");
+
+            entity.HasIndex(e => e.ProductId)
+                .HasDatabaseName("product_badge_assignments_product_id_idx");
+
+            entity.HasIndex(e => e.ProductVariantId)
+                .HasDatabaseName("product_badge_assignments_product_variant_id_idx");
+        });
+
+        modelBuilder.Entity<ProductBadgeSetting>(entity =>
+        {
+            entity.HasKey(e => e.BadgeId)
+                .HasName("product_badge_settings_pkey");
+
+            entity.ToTable("product_badge_settings");
+
+            entity.Property(e => e.BadgeId)
+                .ValueGeneratedNever()
+                .HasColumnName("badge_id");
+
+            entity.Property(e => e.PeriodDays)
+                .HasColumnName("period_days");
+
+            entity.Property(e => e.Threshold)
+                .HasColumnName("threshold");
+
+            entity.Property(e => e.DurationDays)
+                .HasColumnName("duration_days");
+
+            entity.Property(e => e.IsEnabled)
+                .HasDefaultValue(true)
+                .HasColumnName("is_enabled");
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("created_at");
+
+            entity.Property(e => e.UpdatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("updated_at");
+
+            entity.HasOne(e => e.Badge)
+                .WithOne(e => e.Settings)
+                .HasForeignKey<ProductBadgeSetting>(e => e.BadgeId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("product_badge_settings_badge_id_fkey");
         });
 
         OnModelCreatingPartial(modelBuilder);
