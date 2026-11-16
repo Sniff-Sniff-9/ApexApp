@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using ApexApp.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -79,6 +79,24 @@ public partial class AppDbContext : DbContext
     public virtual DbSet<ProductBadgeAssignment> ProductBadgeAssignments { get; set; }
 
     public virtual DbSet<ProductBadgeSetting> ProductBadgeSettings { get; set; }
+
+    public virtual DbSet<Notification> Notifications { get; set; }
+
+    public virtual DbSet<CompanyNews> CompanyNews { get; set; }
+
+    public DbSet<Raffle> Raffles { get; set; }
+
+    public DbSet<RafflePrize> RafflePrizes { get; set; }
+
+    public DbSet<RaffleItem> RaffleItems { get; set; }
+
+    public DbSet<RaffleSpin> RaffleSpins { get; set; }
+
+    public DbSet<UserReward> UserRewards { get; set; }
+
+    public DbSet<RafflePrizeProduct> RafflePrizeProducts { get; set; }
+
+    public DbSet<UserProfileCustomization> UserProfileCustomizations { get; set; }
 
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -1307,6 +1325,468 @@ public partial class AppDbContext : DbContext
                 .HasForeignKey<ProductBadgeSetting>(e => e.BadgeId)
                 .OnDelete(DeleteBehavior.Cascade)
                 .HasConstraintName("product_badge_settings_badge_id_fkey");
+        });
+
+        modelBuilder.Entity<Notification>(entity =>
+        {
+            entity.HasKey(e => e.Id)
+                .HasName("notifications_pkey");
+
+            entity.ToTable("notifications");
+
+            entity.Property(e => e.Id)
+                .UseIdentityByDefaultColumn()
+                .HasColumnName("id");
+
+            entity.Property(e => e.UserId)
+                .HasColumnName("user_id")
+                .IsRequired();
+
+            entity.Property(e => e.Type)
+                .HasMaxLength(50)
+                .HasColumnName("type")
+                .IsRequired();
+
+            entity.Property(e => e.Title)
+                .HasMaxLength(150)
+                .HasColumnName("title")
+                .IsRequired();
+
+            entity.Property(e => e.Message)
+                .HasColumnType("text")
+                .HasColumnName("message")
+                .IsRequired();
+
+            entity.Property(e => e.Data)
+                .HasColumnType("jsonb")
+                .HasColumnName("data");
+
+            entity.Property(e => e.IsRead)
+                .HasDefaultValue(false)
+                .HasColumnName("is_read");
+
+            entity.Property(e => e.CreatedAt)
+                .HasColumnType("timestamp with time zone")
+                .HasDefaultValueSql("now()")
+                .HasColumnName("created_at");
+
+            entity.HasIndex(e => new { e.UserId, e.CreatedAt })
+                .HasDatabaseName("ix_notifications_user_created")
+                .IsDescending(false, true);
+
+            entity.HasIndex(e => new { e.UserId, e.IsRead })
+                .HasDatabaseName("ix_notifications_user_is_read");
+        });
+
+        modelBuilder.Entity<CompanyNews>(entity =>
+        {
+            entity.HasKey(e => e.Id)
+                .HasName("company_news_pkey");
+
+            entity.ToTable("company_news");
+
+            entity.Property(e => e.Id)
+                .UseIdentityByDefaultColumn()
+                .HasColumnName("id");
+
+            entity.Property(e => e.Title)
+                .HasMaxLength(200)
+                .HasColumnName("title")
+                .IsRequired();
+
+            entity.Property(e => e.Summary)
+                .HasMaxLength(500)
+                .HasColumnName("summary");
+
+            entity.Property(e => e.Content)
+                .HasColumnType("text")
+                .HasColumnName("content")
+                .IsRequired();
+
+            entity.Property(e => e.ImageUrl)
+                .HasColumnType("text")
+                .HasColumnName("image_url");
+
+            entity.Property(e => e.AuthorId)
+                .HasColumnName("author_id")
+                .IsRequired();
+
+            entity.Property(e => e.CreatedAt)
+                .HasColumnType("timestamp with time zone")
+                .HasDefaultValueSql("now()")
+                .HasColumnName("created_at");
+
+            entity.Property(e => e.UpdatedAt)
+                .HasColumnType("timestamp with time zone")
+                .HasDefaultValueSql("now()")
+                .HasColumnName("updated_at");
+
+            entity.HasIndex(e => e.AuthorId)
+                .HasDatabaseName("ix_company_news_author");
+
+            entity.HasOne(e => e.Author)
+                .WithMany()
+                .HasForeignKey(e => e.AuthorId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("company_news_author_id_fkey");
+        });
+
+        modelBuilder.Entity<Raffle>(entity =>
+        {
+            entity.ToTable("raffles");
+
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Id)
+                .UseIdentityByDefaultColumn()
+                .HasColumnName("id");
+
+            entity.Property(e => e.Name)
+                .HasMaxLength(150)
+                .IsRequired()
+                .HasColumnName("name");
+
+            entity.Property(e => e.Description)
+                .HasColumnName("description");
+
+            entity.Property(e => e.SpinCost)
+                .HasPrecision(18, 2)
+                .HasColumnName("spin_cost");
+
+            entity.Property(e => e.IsActive)
+                .HasDefaultValue(false)
+                .HasColumnName("is_active");
+
+            entity.Property(e => e.StartsAt)
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("starts_at");
+
+            entity.Property(e => e.EndsAt)
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("ends_at");
+
+            entity.Property(e => e.MaxSpinsPerUser)
+                .HasColumnName("max_spins_per_user");
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("created_at");
+
+            entity.Property(e => e.UpdatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("updated_at");
+
+            entity.HasIndex(e => e.IsActive)
+                .HasDatabaseName("ix_raffles_is_active");
+        });
+
+        modelBuilder.Entity<RafflePrize>(entity =>
+        {
+            entity.ToTable("raffle_prizes");
+
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Id)
+                .UseIdentityByDefaultColumn()
+                .HasColumnName("id");
+
+            entity.Property(e => e.Name)
+                .HasMaxLength(150)
+                .IsRequired()
+                .HasColumnName("name");
+
+            entity.Property(e => e.Description)
+                .HasColumnName("description");
+
+            entity.Property(e => e.PrizeType)
+                .HasMaxLength(50)
+                .IsRequired()
+                .HasColumnName("prize_type");
+
+            entity.Property(e => e.ImageUrl)
+                .HasColumnName("image_url");
+
+            entity.Property(e => e.AssetUrl)
+                .HasColumnName("asset_url");
+
+            entity.Property(e => e.Metadata)
+                .HasColumnType("jsonb")
+                .HasColumnName("metadata");
+
+            entity.Property(e => e.DurationDays)
+                .HasColumnName("duration_days");
+
+            entity.Property(e => e.IsActive)
+                .HasDefaultValue(true)
+                .HasColumnName("is_active");
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("created_at");
+
+            entity.Property(e => e.UpdatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("updated_at");
+
+            entity.HasIndex(e => e.PrizeType)
+                .HasDatabaseName("ix_raffle_prizes_prize_type");
+        });
+
+        modelBuilder.Entity<RaffleItem>(entity =>
+        {
+            entity.ToTable("raffle_items");
+
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Id)
+                .UseIdentityByDefaultColumn()
+                .HasColumnName("id");
+
+            entity.Property(e => e.RaffleId)
+                .HasColumnName("raffle_id");
+
+            entity.Property(e => e.PrizeId)
+                .HasColumnName("prize_id");
+
+            entity.Property(e => e.Probability)
+                .HasPrecision(10, 6)
+                .HasColumnName("probability");
+
+            entity.Property(e => e.Quantity)
+                .HasColumnName("quantity");
+
+            entity.Property(e => e.RemainingQuantity)
+                .HasColumnName("remaining_quantity");
+
+            entity.Property(e => e.IsActive)
+                .HasDefaultValue(true)
+                .HasColumnName("is_active");
+
+            entity.Property(e => e.SortOrder)
+                .HasDefaultValue(0)
+                .HasColumnName("sort_order");
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("created_at");
+
+            entity.HasOne(e => e.Raffle)
+                .WithMany(e => e.Items)
+                .HasForeignKey(e => e.RaffleId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.Prize)
+                .WithMany(e => e.RaffleItems)
+                .HasForeignKey(e => e.PrizeId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(e => e.RaffleId)
+                .HasDatabaseName("ix_raffle_items_raffle_id");
+
+            entity.HasIndex(e => e.PrizeId)
+                .HasDatabaseName("ix_raffle_items_prize_id");
+        });
+
+        modelBuilder.Entity<RaffleSpin>(entity =>
+        {
+            entity.ToTable("raffle_spins");
+
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Id)
+                .UseIdentityByDefaultColumn()
+                .HasColumnName("id");
+
+            entity.Property(e => e.RaffleId)
+                .HasColumnName("raffle_id");
+
+            entity.Property(e => e.UserId)
+                .HasColumnName("user_id");
+
+            entity.Property(e => e.RaffleItemId)
+                .HasColumnName("raffle_item_id");
+
+            entity.Property(e => e.PrizeId)
+                .HasColumnName("prize_id");
+
+            entity.Property(e => e.Cost)
+                .HasPrecision(18, 2)
+                .HasColumnName("cost");
+
+            entity.Property(e => e.Status)
+                .HasMaxLength(30)
+                .IsRequired()
+                .HasColumnName("status");
+
+            entity.Property(e => e.IdempotencyKey)
+                .HasColumnName("idempotency_key");
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("created_at");
+
+            entity.HasOne(e => e.Raffle)
+                .WithMany(e => e.Spins)
+                .HasForeignKey(e => e.RaffleId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.RaffleItem)
+                .WithMany(e => e.Spins)
+                .HasForeignKey(e => e.RaffleItemId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.Prize)
+                .WithMany(e => e.Spins)
+                .HasForeignKey(e => e.PrizeId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(e => new { e.UserId, e.IdempotencyKey })
+                .IsUnique()
+                .HasDatabaseName("ux_raffle_spins_user_id_idempotency_key");
+
+            entity.HasIndex(e => new { e.UserId, e.CreatedAt })
+                .HasDatabaseName("ix_raffle_spins_user_id_created_at");
+
+            entity.HasIndex(e => new { e.RaffleId, e.UserId })
+                .HasDatabaseName("ix_raffle_spins_raffle_id_user_id");
+        });
+
+        modelBuilder.Entity<UserReward>(entity =>
+        {
+            entity.ToTable("user_rewards");
+
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Id)
+                .UseIdentityByDefaultColumn()
+                .HasColumnName("id");
+
+            entity.Property(e => e.UserId)
+                .HasColumnName("user_id");
+
+            entity.Property(e => e.PrizeId)
+                .HasColumnName("prize_id");
+
+            entity.Property(e => e.RaffleSpinId)
+                .HasColumnName("raffle_spin_id");
+
+            entity.Property(e => e.Status)
+                .HasMaxLength(30)
+                .IsRequired()
+                .HasColumnName("status");
+
+            entity.Property(e => e.Metadata)
+                .HasColumnType("jsonb")
+                .HasColumnName("metadata");
+
+            entity.Property(e => e.ExpiresAt)
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("expires_at");
+
+            entity.Property(e => e.ActivatedAt)
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("activated_at");
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("created_at");
+
+            entity.HasOne(e => e.Prize)
+                .WithMany(e => e.UserRewards)
+                .HasForeignKey(e => e.PrizeId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.RaffleSpin)
+                .WithOne(e => e.UserReward)
+                .HasForeignKey<UserReward>(e => e.RaffleSpinId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(e => new { e.UserId, e.CreatedAt })
+                .HasDatabaseName("ix_user_rewards_user_id_created_at");
+
+            entity.HasIndex(e => new { e.UserId, e.Status })
+                .HasDatabaseName("ix_user_rewards_user_id_status");
+        });
+
+        modelBuilder.Entity<RafflePrizeProduct>(entity =>
+        {
+            entity.ToTable("raffle_prize_products");
+
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Id)
+                .UseIdentityByDefaultColumn()
+                .HasColumnName("id");
+
+            entity.Property(e => e.PrizeId)
+                .HasColumnName("prize_id");
+
+            entity.Property(e => e.ProductId)
+                .HasColumnName("product_id");
+
+            entity.Property(e => e.ProductVariantId)
+                .HasColumnName("product_variant_id");
+
+            entity.Property(e => e.Quantity)
+                .HasDefaultValue(1)
+                .HasColumnName("quantity");
+
+            entity.HasOne(e => e.Prize)
+                .WithOne(e => e.Product)
+                .HasForeignKey<RafflePrizeProduct>(e => e.PrizeId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.Product)
+                .WithMany(d => d.RafflePrizeProducts)
+                .HasForeignKey(e => e.ProductId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.ProductVariant)
+                .WithMany(d => d.RafflePrizeProducts)
+                .HasForeignKey(e => e.ProductVariantId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(e => e.PrizeId)
+                .IsUnique()
+                .HasDatabaseName("ux_raffle_prize_products_prize_id");
+        });
+
+        modelBuilder.Entity<UserProfileCustomization>(entity =>
+        {
+            entity.ToTable("user_profile_customization");
+
+            entity.HasKey(e => e.UserId);
+
+            entity.Property(e => e.UserId)
+                .HasColumnName("user_id");
+
+            entity.Property(e => e.ActiveIconRewardId)
+                .HasColumnName("active_icon_reward_id");
+
+            entity.Property(e => e.ActiveFrameRewardId)
+                .HasColumnName("active_frame_reward_id");
+
+            entity.Property(e => e.UpdatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("updated_at");
+
+            entity.HasOne(e => e.ActiveIconReward)
+                .WithMany()
+                .HasForeignKey(e => e.ActiveIconRewardId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.ActiveFrameReward)
+                .WithMany()
+                .HasForeignKey(e => e.ActiveFrameRewardId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         OnModelCreatingPartial(modelBuilder);

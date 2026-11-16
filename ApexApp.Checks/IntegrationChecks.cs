@@ -64,6 +64,9 @@ internal static class IntegrationChecks
         // Сервисы оформления заказа: нужны для сквозной проверки корзины и checkout.
         services.AddScoped<CartRepository>();
         services.AddScoped<ICartService, CartService>();
+        services.AddScoped<INotificationService, NotificationService>();
+        services.AddScoped<IProductDiscountService, ProductDiscountService>();
+        services.AddScoped<IBadgeMaintenanceService, BadgeMaintenanceService>();
         services.AddScoped<IAchievementService, AchievementService>();
         services.AddScoped<IOrderService, OrderService>();
 

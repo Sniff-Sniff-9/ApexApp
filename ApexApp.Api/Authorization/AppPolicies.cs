@@ -17,6 +17,9 @@ public static class AppPolicies
     public const string ManageOrders = "ManageOrders";
     public const string ManageCatalog = "ManageCatalog";
 
+    /// <summary>Управление новостями компании.</summary>
+    public const string ManageNews = "ManageNews";
+
     /// <summary>Доступ к агрегированной аналитике платформы и отделов.</summary>
     public const string ViewAnalytics = "ViewAnalytics";
 

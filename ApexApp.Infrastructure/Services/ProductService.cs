@@ -3,12 +3,15 @@ using ApexApp.Infrastructure.Caching;
 using ApexApp.Infrastructure.Common;
 using ApexApp.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace ApexApp.Infrastructure.Services;
 
 public sealed class ProductService(
     ProductRepository repository,
-    ICacheService cache) : IProductService
+    ICacheService cache,
+    IBadgeMaintenanceService badgeMaintenance,
+    ILogger<ProductService> logger) : IProductService
 {
     public async Task<List<Product>> GetActiveAsync(
         int? categoryId = null,
@@ -73,6 +76,9 @@ public sealed class ProductService(
         await repository.SaveChangesAsync(cancellationToken);
 
         cache.RemoveByPrefix(CacheKeys.ProductsPrefix);
+        cache.RemoveByPrefix(CacheKeys.CatalogPrefix);
+
+        await TryRecalculateBadgesAsync(product.Id, cancellationToken);
 
         return (true, null, product);
     }
@@ -108,6 +114,9 @@ public sealed class ProductService(
         await repository.SaveChangesAsync(cancellationToken);
 
         cache.RemoveByPrefix(CacheKeys.ProductsPrefix);
+        cache.RemoveByPrefix(CacheKeys.CatalogPrefix);
+
+        await TryRecalculateBadgesAsync(product.Id, cancellationToken);
 
         return (true, null, product);
     }
@@ -131,6 +140,9 @@ public sealed class ProductService(
         await repository.SaveChangesAsync(cancellationToken);
 
         cache.RemoveByPrefix(CacheKeys.ProductsPrefix);
+        cache.RemoveByPrefix(CacheKeys.CatalogPrefix);
+
+        await TryRecalculateBadgesAsync(product.Id, cancellationToken);
 
         return (true, null);
     }
@@ -211,7 +223,14 @@ public sealed class ProductService(
         variant.ProductId = productId;
         variant.IsActive = true;
 
-        return await repository.AddVariantAsync(variant);
+        var created = await repository.AddVariantAsync(variant);
+
+        cache.RemoveByPrefix(CacheKeys.ProductsPrefix);
+        cache.RemoveByPrefix(CacheKeys.CatalogPrefix);
+
+        await TryRecalculateBadgesAsync(productId, CancellationToken.None);
+
+        return created;
     }
 
     public async Task<ProductVariant?> UpdateVariantAsync(int productId, int variantId, ProductVariant variant)
@@ -239,7 +258,14 @@ public sealed class ProductService(
         existingVariant.Stock = variant.Stock;
         existingVariant.IsActive = variant.IsActive;
 
-        return await repository.UpdateVariantAsync(existingVariant);
+        var updated = await repository.UpdateVariantAsync(existingVariant);
+
+        cache.RemoveByPrefix(CacheKeys.ProductsPrefix);
+        cache.RemoveByPrefix(CacheKeys.CatalogPrefix);
+
+        await TryRecalculateBadgesAsync(productId, CancellationToken.None);
+
+        return updated;
     }
 
     public async Task<bool> DeleteVariantAsync(int productId, int variantId)
@@ -251,13 +277,40 @@ public sealed class ProductService(
 
         try
         {
-            return await repository.DeleteVariantAsync(variant);
+            var deleted = await repository.DeleteVariantAsync(variant);
+
+            cache.RemoveByPrefix(CacheKeys.ProductsPrefix);
+            cache.RemoveByPrefix(CacheKeys.CatalogPrefix);
+
+            await TryRecalculateBadgesAsync(productId, CancellationToken.None);
+
+            return deleted;
         }
         catch (DbUpdateException exception) when (DatabaseErrors.IsForeignKeyViolation(exception))
         {
             // Вариант уже продан или лежит в корзине: физическое удаление нарушило бы историю.
             throw new InvalidOperationException(
                 "Cannot delete a variant that is referenced by carts or orders.");
+        }
+    }
+
+    private async Task TryRecalculateBadgesAsync(
+        int productId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await badgeMaintenance.RecalculateForProductAsync(
+                productId,
+                cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            // Badge maintenance must not make a catalog write fail.
+            logger.LogError(
+                exception,
+                "Failed to recalculate badges for product {ProductId}",
+                productId);
         }
     }
 }

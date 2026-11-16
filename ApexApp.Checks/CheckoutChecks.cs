@@ -331,6 +331,14 @@ internal static class CheckoutChecks
             .Where(achievement => achievement.UserId == userId && achievement.EarnedAt >= startedAt)
             .ExecuteDeleteAsync();
 
+        var startedAtOffset = new DateTimeOffset(startedAt, TimeSpan.Zero);
+
+        await dbContext.Notifications
+            .Where(notification =>
+                notification.UserId == userId &&
+                notification.CreatedAt >= startedAtOffset)
+            .ExecuteDeleteAsync();
+
         await dbContext.Balances
             .Where(item => item.UserId == userId && item.Type == BalanceType.Personal)
             .ExecuteUpdateAsync(setters => setters

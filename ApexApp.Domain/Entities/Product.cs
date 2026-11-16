@@ -42,4 +42,7 @@ public partial class Product
     public virtual ICollection<ProductBadgeAssignment> BadgeAssignments { get; set; }
         = new List<ProductBadgeAssignment>();
 
+    public virtual ICollection<RafflePrizeProduct> RafflePrizeProducts { get; set; }
+        = new List<RafflePrizeProduct>();
+
 }

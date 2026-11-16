@@ -4,6 +4,7 @@ using ApexApp.Domain.Entities;
 using ApexApp.Infrastructure.Common;
 using ApexApp.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace ApexApp.Infrastructure.Services;
@@ -15,7 +16,10 @@ namespace ApexApp.Infrastructure.Services;
 /// </summary>
 public sealed class QuestService(
     AppDbContext dbContext,
-    IActivityRewardService activityRewardService) : IQuestService
+    IActivityRewardService activityRewardService,
+    INotificationService notificationService,
+    IEngagementLevelNotifier engagementLevelNotifier,
+    ILogger<QuestService> logger) : IQuestService
 {
     private const int TitleMaxLength = 200;
 
@@ -392,6 +396,10 @@ public sealed class QuestService(
                     await dbContext.SaveChangesAsync(cancellationToken);
                     await databaseTransaction.CommitAsync(cancellationToken);
 
+                    await engagementLevelNotifier.TryNotifyAsync(
+                        userId,
+                        cancellationToken);
+
                     return ServiceResult<QuestStepResult>.Ok(
                         new QuestStepResult(completion, completionType, true, null, false));
                 }
@@ -681,6 +689,24 @@ public sealed class QuestService(
                     participation.RewardClaimed = true;
 
                     await databaseTransaction.CommitAsync(cancellationToken);
+
+                    await TryNotifyAsync(
+                        userId,
+                        NotificationTypes.QuestCompleted,
+                        "Квест завершён",
+                        $"Квест «{quest.Title}» завершён.",
+                        new
+                        {
+                            questId,
+                            rewardAmount = reward.Value!.AlreadyGranted
+                                ? quest.RewardAmount
+                                : grantedAmount
+                        },
+                        cancellationToken);
+
+                    await engagementLevelNotifier.TryNotifyAsync(
+                        userId,
+                        cancellationToken);
 
                     return ServiceResult<QuestCompletionResult>.Ok(new QuestCompletionResult(
                         participation,
@@ -1479,6 +1505,35 @@ public sealed class QuestService(
                         "The proof has already been reviewed.");
             }
 
+            var accepted = targetStatus == QuestProofStatuses.Approved;
+
+            await TryNotifyAsync(
+                view.UserId,
+                accepted
+                    ? NotificationTypes.QuestProofAccepted
+                    : NotificationTypes.QuestProofRejected,
+                accepted
+                    ? "Доказательство принято"
+                    : "Доказательство отклонено",
+                accepted
+                    ? $"Доказательство шага «{view.StepTitle}» принято."
+                    : $"Доказательство шага «{view.StepTitle}» отклонено.",
+                new
+                {
+                    questId = view.QuestId,
+                    stepId = view.StepId,
+                    proofId = view.Proof.Id,
+                    status = view.Proof.Status
+                },
+                cancellationToken);
+
+            if (accepted)
+            {
+                await engagementLevelNotifier.TryNotifyAsync(
+                    view.UserId,
+                    cancellationToken);
+            }
+
             return ServiceResult<QuestProofReviewResult>.Ok(
                 new QuestProofReviewResult(view, false));
         }
@@ -1872,6 +1927,34 @@ public sealed class QuestService(
             return ServiceResult<QuestStepResult>.Fail(
                 409,
                 "The proof update conflicted with another request. Please retry.");
+        }
+    }
+
+    private async Task TryNotifyAsync(
+        Guid userId,
+        string type,
+        string title,
+        string message,
+        object? data,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await notificationService.CreateAsync(
+                userId,
+                type,
+                title,
+                message,
+                data,
+                cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(
+                exception,
+                "Failed to create quest notification {NotificationType} for user {UserId}",
+                type,
+                userId);
         }
     }
 }

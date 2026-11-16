@@ -16,16 +16,22 @@ namespace ApexApp.Api.Controllers;
 public sealed class ProductsController : ApiControllerBase
 {
     private readonly IProductService _productService;
+    private readonly ICatalogService _catalogService;
     private readonly ProductVariantCategoryService _variantCategoryService;
 
     /// <summary>
     /// Инициализирует новый экземпляр класса <see cref="ProductsController"/>.
     /// </summary>
     /// <param name="productService">Сервис товаров.</param>
+    /// <param name="catalogService">Сервис каталога с ценами и бейджами.</param>
     /// <param name="variantCategoryService">Сервис категорий вариантов товаров.</param>
-    public ProductsController(IProductService productService, ProductVariantCategoryService variantCategoryService)
+    public ProductsController(
+        IProductService productService,
+        ICatalogService catalogService,
+        ProductVariantCategoryService variantCategoryService)
     {
         _productService = productService;
+        _catalogService = catalogService;
         _variantCategoryService = variantCategoryService;
 
     }
@@ -51,10 +57,10 @@ public sealed class ProductsController : ApiControllerBase
             });
         }
 
-        var products = await _productService.GetActiveAsync(
+        var products = await _catalogService.GetActiveAsync(
             categoryId, cancellationToken);
 
-        return Ok(products.Select(ToResponse));
+        return Ok(products.Select(ToDto));
     }
 
     /// <summary>
@@ -70,7 +76,7 @@ public sealed class ProductsController : ApiControllerBase
         int id,
         CancellationToken cancellationToken)
     {
-        var product = await _productService.GetActiveByIdAsync(
+        var product = await _catalogService.GetActiveByIdAsync(
             id, cancellationToken);
 
         if (product is null)
@@ -81,7 +87,7 @@ public sealed class ProductsController : ApiControllerBase
             });
         }
 
-        return Ok(ToResponse(product));
+        return Ok(ToDto(product));
     }
 
     /// <summary>
@@ -208,6 +214,48 @@ public sealed class ProductsController : ApiControllerBase
         };
     }
 
+    private static CatalogProductDto ToDto(CatalogProduct product) =>
+        new(
+            product.Id,
+            product.CategoryId,
+            product.Name,
+            product.Description,
+            product.Price,
+            product.OriginalPrice,
+            product.FinalPrice,
+            product.DiscountPercent,
+            product.ImageUrl,
+            product.Stock,
+            product.IsActive,
+            product.IsDigital,
+            product.CreatedAt,
+            product.UpdatedAt,
+            product.Badges.Select(ToDto).ToList());
+
+    private static CatalogVariantDto ToDto(CatalogVariant variant) =>
+        new(
+            variant.Id,
+            variant.ProductId,
+            variant.Name,
+            variant.CategoryId,
+            variant.ImageUrl,
+            variant.Price,
+            variant.OriginalPrice,
+            variant.FinalPrice,
+            variant.DiscountPercent,
+            variant.Stock,
+            variant.IsActive,
+            variant.Badges.Select(ToDto).ToList());
+
+    private static CatalogBadgeDto ToDto(CatalogBadge badge) =>
+        new(
+            badge.Id,
+            badge.Code,
+            badge.Name,
+            badge.Color,
+            badge.SortOrder,
+            badge.ProductVariantId);
+
     /// <summary>
     /// Получить все товары, включая неактивные.
     /// </summary>
@@ -229,53 +277,51 @@ public sealed class ProductsController : ApiControllerBase
             });
         }
 
-        var products = await _productService.GetAllAsync(
+        var products = await _catalogService.GetAllAsync(
             categoryId,
             cancellationToken);
 
-        return Ok(products.Select(ToResponse));
+        return Ok(products.Select(ToDto));
     }
 
     [HttpGet("{productId}/variants")]
-    public async Task<IActionResult> GetVariants(int productId)
+    public async Task<IActionResult> GetVariants(
+        int productId,
+        CancellationToken cancellationToken)
     {
-        var variants = await _productService.GetVariantsAsync(productId);
+        var variants = await _catalogService.GetVariantsAsync(
+            productId,
+            cancellationToken);
 
-        return Ok(variants.Select(v => new ProductVariantDto
+        if (variants is null)
         {
-            Id = v.Id,
-            ProductId = v.ProductId,
-            Name = v.Name,
-            CategoryId = v.CategoryId,
-            ImageUrl = v.ImageUrl,
-            Price = v.Price,
-            Stock = v.Stock,
-            IsActive = v.IsActive
-        }));
+            return NotFound(new { message = "Product was not found." });
+        }
+
+        return Ok(variants.Select(ToDto));
     }
 
     [HttpGet("{productId}/variants/{variantId}")]
-    public async Task<IActionResult> GetVariant(int productId, int variantId)
+    public async Task<IActionResult> GetVariant(
+        int productId,
+        int variantId,
+        CancellationToken cancellationToken)
     {
-        var variant = await _productService.GetVariantByIdAsync(productId, variantId);
+        var variant = await _catalogService.GetVariantAsync(
+            productId,
+            variantId,
+            cancellationToken);
 
-        if (variant == null)
-            return NotFound();
-
-        return Ok(new ProductVariantDto
+        if (variant is null)
         {
-            Id = variant.Id,
-            ProductId = variant.ProductId,
-            Name = variant.Name,
-            CategoryId = variant.CategoryId,
-            ImageUrl = variant.ImageUrl,
-            Price = variant.Price,
-            Stock = variant.Stock,
-            IsActive = variant.IsActive
-        });
+            return NotFound();
+        }
+
+        return Ok(ToDto(variant));
     }
 
     [HttpPost("{productId}/variants")]
+    [Authorize(Policy = AppPolicies.ManageCatalog)]
     public async Task<IActionResult> AddVariant(int productId, CreateProductVariantDto dto)
     {
         var variant = new ProductVariant
@@ -306,6 +352,7 @@ public sealed class ProductsController : ApiControllerBase
     }
 
     [HttpPut("{productId}/variants/{variantId}")]
+    [Authorize(Policy = AppPolicies.ManageCatalog)]
     public async Task<IActionResult> UpdateVariant(int productId, int variantId, UpdateProductVariantDto dto)
     {
         var variant = new ProductVariant
@@ -345,6 +392,7 @@ public sealed class ProductsController : ApiControllerBase
     /// <response code="404">Вариант не найден.</response>
     /// <response code="409">Вариант используется в корзинах или заказах.</response>
     [HttpDelete("{productId}/variants/{variantId}")]
+    [Authorize(Policy = AppPolicies.ManageCatalog)]
     public async Task<IActionResult> DeleteVariant(int productId, int variantId)
     {
         try

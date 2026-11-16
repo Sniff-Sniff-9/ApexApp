@@ -1,4 +1,4 @@
-﻿using ApexApp.Domain.Entities;
+using ApexApp.Domain.Entities;
 using ApexApp.Infrastructure.Caching;
 using ApexApp.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -13,17 +13,23 @@ public sealed class ThankService : IThankService
     private readonly IAchievementService _achievementService;
     private readonly ILogger<ThankService> _logger;
     private readonly ICacheService _cache;
+    private readonly INotificationService _notificationService;
+    private readonly IEngagementLevelNotifier _engagementLevelNotifier;
 
     public ThankService(
         AppDbContext dbContext,
         IAchievementService achievementService,
         ILogger<ThankService> logger,
-        ICacheService cache)
+        ICacheService cache,
+        INotificationService notificationService,
+        IEngagementLevelNotifier engagementLevelNotifier)
     {
         this.dbContext = dbContext;
         _achievementService = achievementService;
         _logger = logger;
         _cache = cache;
+        _notificationService = notificationService;
+        _engagementLevelNotifier = engagementLevelNotifier;
     }
 
     public async Task<ThanksResult> CreateAsync(
@@ -145,6 +151,35 @@ public sealed class ThankService : IThankService
 
         // The leaderboard aggregates the number of thanks received.
         _cache.RemoveByPrefix(CacheKeys.LeaderboardPrefix);
+
+        try
+        {
+            await _notificationService.CreateAsync(
+                request.ToUserId,
+                NotificationTypes.ThankReceived,
+                "Получена благодарность",
+                string.IsNullOrWhiteSpace(request.Message)
+                    ? "Вам отправили благодарность."
+                    : request.Message!,
+                new
+                {
+                    thankId = thank.Id,
+                    fromUserId = fromUserId,
+                    amount = request.Amount
+                },
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Failed to create thank notification for user {UserId}, thank {ThankId}",
+                request.ToUserId,
+                thank.Id);
+        }
+
+        await _engagementLevelNotifier.TryNotifyAsync(fromUserId, cancellationToken);
+        await _engagementLevelNotifier.TryNotifyAsync(request.ToUserId, cancellationToken);
 
         Achievement? newAchievement = null;
 
@@ -342,6 +377,30 @@ public sealed class ThankService : IThankService
 
         await dbContext.SaveChangesAsync(cancellationToken);
         await dbTransaction.CommitAsync(cancellationToken);
+
+        try
+        {
+            await _notificationService.CreateAsync(
+                request.ToUserId,
+                NotificationTypes.ManagerBonusReceived,
+                "Получен бонус от руководителя",
+                string.IsNullOrWhiteSpace(request.Message)
+                    ? $"Вам начислен бонус: {request.Amount} баллов."
+                    : request.Message!,
+                new
+                {
+                    managerId,
+                    amount = request.Amount
+                },
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Failed to create manager-bonus notification for user {UserId}",
+                request.ToUserId);
+        }
 
         return new ThanksResult(201, null, null, null);
     }

@@ -1,7 +1,9 @@
 using ApexApp.Domain.Entities;
 using ApexApp.Infrastructure.Common;
+using ApexApp.Infrastructure.Data;
 using ApexApp.Infrastructure.Services;
 using ApexApp.Infrastructure.Services.Analytics;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 namespace ApexApp.Checks;
@@ -21,6 +23,137 @@ internal static class UnitChecks
         EmployeeReferenceChecks(runner);
         EngagementEquivalenceChecks(runner);
         PricingChecks(runner);
+        DiscountChecks(runner);
+        ModelChecks(runner);
+    }
+
+    private static void ModelChecks(CheckRunner runner)
+    {
+        runner.Check("db.model-builds", () =>
+        {
+            var options = new DbContextOptionsBuilder<AppDbContext>()
+                .UseNpgsql("Host=localhost;Database=apex_model_check;Username=apex;Password=apex")
+                .Options;
+
+            using var dbContext = new AppDbContext(options);
+
+            // Accessing Model builds every entity mapping without opening a connection.
+            _ = dbContext.Model;
+        });
+    }
+
+    private static void DiscountChecks(CheckRunner runner)
+    {
+        runner.Check("pricing.discount-rounding", () =>
+        {
+            CheckRunner.Ensure(
+                ProductPricing.ApplyDiscount(100, 33) == 67,
+                "100 at 33% must round to 67");
+            CheckRunner.Ensure(
+                ProductPricing.ApplyDiscount(99, 33) == 66,
+                "99 at 33% must round to 66");
+            CheckRunner.Ensure(
+                ProductPricing.ApplyDiscount(100, 20) == 80,
+                "100 at 20% must be 80");
+        });
+
+        runner.Check("pricing.discount-selection", () =>
+        {
+            var now = DateTime.UtcNow;
+
+            ProductDiscount[] discounts =
+            [
+                new()
+                {
+                    Id = 1,
+                    ProductId = 1,
+                    ProductVariantId = null,
+                    DiscountPercent = 20,
+                    StartsAt = now.AddDays(-1),
+                    IsActive = true
+                },
+                new()
+                {
+                    Id = 2,
+                    ProductId = 1,
+                    ProductVariantId = 5,
+                    DiscountPercent = 10,
+                    StartsAt = now.AddDays(-1),
+                    IsActive = true
+                }
+            ];
+
+            var effective = ProductPricing.SelectEffective(discounts, 5, now);
+
+            CheckRunner.Ensure(
+                effective?.Id == 2,
+                "variant-specific discount must override product-wide discount");
+
+            CheckRunner.Ensure(
+                ProductPricing.SelectEffective(discounts, null, now)?.Id == 1,
+                "product-wide discount must apply when no variant is selected");
+        });
+
+        runner.Check("pricing.discount-window", () =>
+        {
+            var now = DateTime.UtcNow;
+
+            ProductDiscount[] discounts =
+            [
+                new()
+                {
+                    Id = 3,
+                    ProductId = 1,
+                    DiscountPercent = 25,
+                    StartsAt = now.AddDays(-2),
+                    EndsAt = now.AddDays(-1),
+                    IsActive = true
+                },
+                new()
+                {
+                    Id = 4,
+                    ProductId = 1,
+                    DiscountPercent = 30,
+                    StartsAt = now.AddDays(1),
+                    IsActive = true
+                }
+            ];
+
+            CheckRunner.Ensure(
+                ProductPricing.SelectEffective(discounts, null, now) is null,
+                "expired and future discounts must be ignored");
+        });
+
+        runner.Check("pricing.discount-applied-to-selection", () =>
+        {
+            var product = MakeProduct(price: 100);
+            var variant = MakeVariant(price: 130);
+            var discount = new ProductDiscount
+            {
+                Id = 6,
+                ProductId = 1,
+                ProductVariantId = 5,
+                DiscountPercent = 25,
+                StartsAt = DateTime.UtcNow.AddHours(-1),
+                IsActive = true
+            };
+
+            var selection = ProductVariantPricing.Evaluate(
+                product,
+                variant,
+                2,
+                discount);
+
+            CheckRunner.Ensure(
+                selection.UnitPrice == 98,
+                "130 at 25% must be 98");
+            CheckRunner.Ensure(
+                selection.OriginalUnitPrice == 130,
+                "original variant price must be preserved");
+            CheckRunner.Ensure(
+                selection.DiscountPercent == 25,
+                "applied discount percent must be preserved");
+        });
     }
 
     private static void PricingChecks(CheckRunner runner)

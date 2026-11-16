@@ -17,6 +17,8 @@ public sealed class EventService(
     AppDbContext dbContext,
     IActivityRewardService activityRewardService,
     IAchievementService achievementService,
+    INotificationService notificationService,
+    IEngagementLevelNotifier engagementLevelNotifier,
     ILogger<EventService> logger) : IEventService
 {
     /// <summary>
@@ -933,6 +935,39 @@ public sealed class EventService(
 
             // Достижение выдаётся только после подтверждения посещения администратором.
             var newAchievement = await AwardFirstActivityAsync(
+                participant.UserId,
+                cancellationToken);
+
+            var eventTitle = await dbContext.Events
+                .AsNoTracking()
+                .Where(item => item.Id == eventId)
+                .Select(item => item.Title)
+                .FirstOrDefaultAsync(cancellationToken) ?? "Мероприятие";
+
+            try
+            {
+                await notificationService.CreateAsync(
+                    participant.UserId,
+                    NotificationTypes.EventCompleted,
+                    "Мероприятие завершено",
+                    $"Участие в мероприятии «{eventTitle}» подтверждено.",
+                    new
+                    {
+                        eventId,
+                        participantId = participant.Id
+                    },
+                    cancellationToken);
+            }
+            catch (Exception exception)
+            {
+                logger.LogError(
+                    exception,
+                    "Failed to create event-completed notification for user {UserId}, event {EventId}",
+                    participant.UserId,
+                    eventId);
+            }
+
+            await engagementLevelNotifier.TryNotifyAsync(
                 participant.UserId,
                 cancellationToken);
 

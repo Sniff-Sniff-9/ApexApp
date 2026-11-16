@@ -5,6 +5,7 @@ using ApexApp.Infrastructure.Caching;
 using ApexApp.Infrastructure.Common;
 using ApexApp.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace ApexApp.Infrastructure.Services;
 
@@ -17,6 +18,9 @@ public sealed class SurveyService : ISurveyService
     private readonly AppDbContext dbContext;
     private readonly ActivityRewardGranter activityRewardGranter;
     private readonly ICacheService cache;
+    private readonly INotificationService notificationService;
+    private readonly IEngagementLevelNotifier engagementLevelNotifier;
+    private readonly ILogger<SurveyService> logger;
 
     private const int TitleMaxLength = 200;
     private const int TextAnswerMaxLength = 4000;
@@ -24,11 +28,17 @@ public sealed class SurveyService : ISurveyService
     public SurveyService(
         AppDbContext dbContext,
         ActivityRewardGranter activityRewardGranter,
-        ICacheService cache)
+        ICacheService cache,
+        INotificationService notificationService,
+        IEngagementLevelNotifier engagementLevelNotifier,
+        ILogger<SurveyService> logger)
     {
         this.dbContext = dbContext;
         this.activityRewardGranter = activityRewardGranter;
         this.cache = cache;
+        this.notificationService = notificationService;
+        this.engagementLevelNotifier = engagementLevelNotifier;
+        this.logger = logger;
     }
 
     /// <inheritdoc />
@@ -362,6 +372,34 @@ public sealed class SurveyService : ISurveyService
             await databaseTransaction.CommitAsync(cancellationToken);
 
             cache.Remove(CacheKeys.SurveyResults(surveyId));
+
+            try
+            {
+                await notificationService.CreateAsync(
+                    userId,
+                    NotificationTypes.SurveyCompleted,
+                    "Анкета пройдена",
+                    $"Вы прошли анкету «{survey.Title}».",
+                    new
+                    {
+                        surveyId,
+                        responseId = response?.Id,
+                        rewardAmount = rewardGranted
+                    },
+                    cancellationToken);
+            }
+            catch (Exception exception)
+            {
+                logger.LogError(
+                    exception,
+                    "Failed to create survey-completed notification for user {UserId}, survey {SurveyId}",
+                    userId,
+                    surveyId);
+            }
+
+            await engagementLevelNotifier.TryNotifyAsync(
+                userId,
+                cancellationToken);
         }
         catch (DbUpdateException exception) when (DatabaseErrors.IsUniqueViolation(exception))
         {

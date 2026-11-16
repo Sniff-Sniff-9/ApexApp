@@ -1,14 +1,17 @@
-﻿using System.Data;
+using System.Data;
 using ApexApp.Domain.Entities;
 using ApexApp.Infrastructure.Caching;
 using ApexApp.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace ApexApp.Infrastructure.Services;
 
 public sealed class AchievementService(
     AppDbContext dbContext,
-    ICacheService cache) : IAchievementService
+    ICacheService cache,
+    INotificationService notificationService,
+    ILogger<AchievementService> logger) : IAchievementService
 {
     public async Task<IReadOnlyList<Achievement>> GetAllAsync(
         CancellationToken cancellationToken = default)
@@ -226,6 +229,30 @@ public sealed class AchievementService(
 
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+
+        try
+        {
+            await notificationService.CreateAsync(
+                userId,
+                NotificationTypes.AchievementAwarded,
+                "Получено достижение",
+                $"Вам открыто достижение «{achievement.Name}».",
+                new
+                {
+                    achievementId = achievement.Id,
+                    code = achievement.Code,
+                    rewardAmount = achievement.RewardAmount
+                },
+                cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(
+                exception,
+                "Failed to create achievement notification for user {UserId}, code {Code}",
+                userId,
+                achievement.Code);
+        }
 
         return true;
     }

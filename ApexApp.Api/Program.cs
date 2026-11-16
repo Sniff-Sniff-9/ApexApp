@@ -3,6 +3,7 @@ using ApexApp.Api.Authorization;
 using ApexApp.Api.Caching;
 using ApexApp.Api.Diagnostics;
 using ApexApp.Api.Swagger;
+using ApexApp.Api.Workers;
 using ApexApp.Infrastructure.Auth;
 using ApexApp.Infrastructure.Caching;
 using ApexApp.Infrastructure.Data;
@@ -103,6 +104,14 @@ builder.Services.AddScoped<IEventService, EventService>();
 builder.Services.AddScoped<ISurveyService, SurveyService>();
 builder.Services.AddScoped<ISupportTicketService, SupportTicketService>();
 builder.Services.AddScoped<ProductVariantCategoryService>();
+builder.Services.AddScoped<IProductDiscountService, ProductDiscountService>();
+builder.Services.AddScoped<IBadgeMaintenanceService, BadgeMaintenanceService>();
+builder.Services.AddScoped<IProductBadgeService, ProductBadgeService>();
+builder.Services.AddScoped<ICatalogService, CatalogService>();
+builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddScoped<IEngagementLevelNotifier, EngagementLevelNotifier>();
+builder.Services.AddScoped<ICompanyNewsService, CompanyNewsService>();
+builder.Services.AddHostedService<BadgeRecalculationWorker>();
 
 // Аналитика: настройки, кеш-обёртка и сервисы отчётов. Все сервисы только читают данные.
 builder.Services.Configure<AnalyticsOptions>(
@@ -283,6 +292,16 @@ builder.Services.AddAuthorization(options =>
         policy.RequireAuthenticatedUser();
         policy.AddRequirements(new ActiveUserRequirement());
         policy.AddRequirements(new AnyRoleRequirement(RoleCodes.Admin, RoleCodes.SuperAdmin, RoleCodes.Merchandiser));
+    });
+
+    options.AddPolicy(AppPolicies.ManageNews, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(new ActiveUserRequirement());
+        policy.AddRequirements(new AnyRoleRequirement(
+            RoleCodes.Admin,
+            RoleCodes.SuperAdmin,
+            RoleCodes.HumanResources));
     });
 
     // Аналитика платформы и отделов: руководитель видит только свой отдел,

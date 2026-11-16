@@ -16,14 +16,19 @@ namespace ApexApp.Api.Controllers;
 public sealed class CartController : ApiControllerBase
 {
     private readonly ICartService _cartService;
+    private readonly IProductDiscountService _discountService;
 
     /// <summary>
     /// Инициализирует новый экземпляр класса <see cref="CartController"/>.
     /// </summary>
     /// <param name="cartService">Сервис корзины.</param>
-    public CartController(ICartService cartService)
+    /// <param name="discountService">Сервис скидок.</param>
+    public CartController(
+        ICartService cartService,
+        IProductDiscountService discountService)
     {
         _cartService = cartService;
+        _discountService = discountService;
     }
 
     /// <summary>
@@ -44,10 +49,25 @@ public sealed class CartController : ApiControllerBase
         var items = await _cartService.GetAsync(
             userId.Value, cancellationToken);
 
+        var now = DateTime.UtcNow;
+        var discounts = await _discountService.GetActiveForProductsAsync(
+            items.Select(item => item.ProductId).Distinct().ToArray(),
+            now,
+            cancellationToken);
+
         return Ok(items.Select(x =>
         {
             // Цена и остаток берутся из БД: вариант может иметь собственную цену.
-            var unitPrice = ProductVariantPricing.ResolveUnitPrice(x.Product, x.ProductVariant);
+            var discount = ProductPricing.SelectEffective(
+                discounts.Where(itemDiscount => itemDiscount.ProductId == x.ProductId),
+                x.ProductVariantId,
+                now);
+
+            var originalUnitPrice = x.ProductVariant?.Price ?? x.Product.Price;
+            var unitPrice = ProductVariantPricing.ResolveUnitPrice(
+                x.Product,
+                x.ProductVariant,
+                discount);
 
             return new
             {
@@ -58,7 +78,9 @@ public sealed class CartController : ApiControllerBase
                 x.ProductVariantId,
                 VariantName = x.ProductVariant?.Name,
                 VariantImageUrl = x.ProductVariant?.ImageUrl,
+                OriginalUnitPrice = originalUnitPrice,
                 UnitPrice = unitPrice,
+                DiscountPercent = discount?.DiscountPercent,
                 x.Quantity,
                 Total = (decimal)unitPrice * x.Quantity,
                 x.AddedAt

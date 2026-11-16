@@ -32,7 +32,9 @@ public enum ProductSelectionStatus
 public sealed record ProductSelection(
     ProductSelectionStatus Status,
     long UnitPrice,
-    int? AvailableStock)
+    int? AvailableStock,
+    long? OriginalUnitPrice = null,
+    int? DiscountPercent = null)
 {
     /// <summary>Признак корректного выбора.</summary>
     public bool IsValid => Status == ProductSelectionStatus.Ok;
@@ -56,8 +58,17 @@ public static class ProductVariantPricing
     /// <param name="product">Товар.</param>
     /// <param name="variant">Выбранный вариант или <c>null</c>.</param>
     /// <returns>Цена в баллах.</returns>
-    public static long ResolveUnitPrice(Product product, ProductVariant? variant) =>
-        variant?.Price ?? product.Price;
+    public static long ResolveUnitPrice(
+        Product product,
+        ProductVariant? variant,
+        ProductDiscount? discount = null)
+    {
+        var basePrice = variant?.Price ?? product.Price;
+
+        return discount is null
+            ? basePrice
+            : ProductPricing.ApplyDiscount(basePrice, discount.DiscountPercent);
+    }
 
     /// <summary>
     /// Проверяет выбранный товар и рассчитывает цену и остаток.
@@ -66,7 +77,11 @@ public static class ProductVariantPricing
     /// <param name="variant">Выбранный вариант или <c>null</c>.</param>
     /// <param name="quantity">Запрошенное количество.</param>
     /// <returns>Результат проверки.</returns>
-    public static ProductSelection Evaluate(Product product, ProductVariant? variant, int quantity)
+    public static ProductSelection Evaluate(
+        Product product,
+        ProductVariant? variant,
+        int quantity,
+        ProductDiscount? discount = null)
     {
         if (quantity <= 0)
         {
@@ -93,8 +108,10 @@ public static class ProductVariantPricing
                 ? ProductSelection.Invalid(ProductSelectionStatus.InsufficientStock)
                 : new ProductSelection(
                     ProductSelectionStatus.Ok,
-                    ResolveUnitPrice(product, variant),
-                    variantStock);
+                    ResolveUnitPrice(product, variant, discount),
+                    variantStock,
+                    variant.Price ?? product.Price,
+                    discount?.DiscountPercent);
         }
 
         if (product.Stock.HasValue && product.Stock.Value < quantity)
@@ -104,7 +121,9 @@ public static class ProductVariantPricing
 
         return new ProductSelection(
             ProductSelectionStatus.Ok,
-            ResolveUnitPrice(product, null),
-            product.Stock);
+            ResolveUnitPrice(product, null, discount),
+            product.Stock,
+            product.Price,
+            discount?.DiscountPercent);
     }
 }

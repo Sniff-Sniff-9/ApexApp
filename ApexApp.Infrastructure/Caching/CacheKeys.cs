@@ -29,6 +29,15 @@ public static class CacheKeys
     /// <summary>Group prefix for product catalog entries.</summary>
     public const string ProductsPrefix = "catalog:products:";
 
+    /// <summary>Group prefix for enriched catalog read models (badges and discounts).</summary>
+    public const string CatalogPrefix = "catalog:view:";
+
+    /// <summary>Company news feed: 60 seconds.</summary>
+    public static readonly TimeSpan CompanyNewsTtl = TimeSpan.FromSeconds(60);
+
+    /// <summary>Group prefix for company news read models.</summary>
+    public const string CompanyNewsPrefix = "news:";
+
     /// <summary>Group prefix for survey result entries.</summary>
     public const string SurveyResultsPrefix = "surveys:results:";
 
@@ -63,6 +72,19 @@ public static class CacheKeys
     /// <summary>Key for a single active product.</summary>
     /// <param name="productId">Product identifier.</param>
     public static string Product(int productId) => $"{ProductsPrefix}item:{productId}";
+
+    /// <summary>Key for the enriched catalog list.</summary>
+    public static string CatalogProducts(int? categoryId) =>
+        categoryId is int id && id > 0
+            ? $"{CatalogPrefix}category:{id}"
+            : $"{CatalogPrefix}all";
+
+    /// <summary>Key for one enriched catalog product.</summary>
+    public static string CatalogProduct(int productId) => $"{CatalogPrefix}item:{productId}";
+
+    /// <summary>Key for a page of company news.</summary>
+    public static string CompanyNews(int page, int pageSize) =>
+        $"{CompanyNewsPrefix}list:{page}:{pageSize}";
 
     /// <summary>Key for a leaderboard page.</summary>
     /// <param name="days">Number of days in the ranking window.</param>

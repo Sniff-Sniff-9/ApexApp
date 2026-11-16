@@ -14,17 +14,26 @@ public sealed class OrderService : IOrderService
     private readonly IAchievementService _achievementService;
     private readonly ILogger<OrderService> _logger;
     private readonly ICacheService _cache;
+    private readonly IProductDiscountService _productDiscountService;
+    private readonly INotificationService _notificationService;
+    private readonly IBadgeMaintenanceService _badgeMaintenance;
 
     public OrderService(
         AppDbContext dbContext,
         IAchievementService achievementService,
         ILogger<OrderService> logger,
-        ICacheService cache)
+        ICacheService cache,
+        IProductDiscountService productDiscountService,
+        INotificationService notificationService,
+        IBadgeMaintenanceService badgeMaintenance)
     {
         _dbContext = dbContext;
         _achievementService = achievementService;
         _logger = logger;
         _cache = cache;
+        _productDiscountService = productDiscountService;
+        _notificationService = notificationService;
+        _badgeMaintenance = badgeMaintenance;
     }
 
     public async Task<(bool Success, int StatusCode, string? Error, Order? Data, Achievement? NewAchievement)>
@@ -94,7 +103,14 @@ public sealed class OrderService : IOrderService
 
             var variantsById = variants.ToDictionary(variant => variant.Id);
 
+            var pricingNow = DateTime.UtcNow;
+            var discounts = await _productDiscountService.GetActiveForProductsAsync(
+                productIds,
+                pricingNow,
+                cancellationToken);
+
             long total = 0;
+            var unitPrices = new Dictionary<long, long>();
 
             foreach (var item in cartItems)
             {
@@ -106,7 +122,16 @@ public sealed class OrderService : IOrderService
                 if (item.ProductVariantId.HasValue && variant is null)
                     return (false, 409, "One or more product variants are unavailable.", null, null);
 
-                var selection = ProductVariantPricing.Evaluate(product, variant, item.Quantity);
+                var discount = ProductPricing.SelectEffective(
+                    discounts.Where(itemDiscount => itemDiscount.ProductId == product.Id),
+                    variant?.Id,
+                    pricingNow);
+
+                var selection = ProductVariantPricing.Evaluate(
+                    product,
+                    variant,
+                    item.Quantity,
+                    discount);
 
                 switch (selection.Status)
                 {
@@ -125,6 +150,8 @@ public sealed class OrderService : IOrderService
                     default:
                         return (false, 400, "Cart contains an invalid quantity.", null, null);
                 }
+
+                unitPrices[item.Id] = selection.UnitPrice;
 
                 try
                 {
@@ -192,7 +219,7 @@ public sealed class OrderService : IOrderService
                         ProductVariantId = variant?.Id,
                         ProductVariant = variant,
                         Quantity = item.Quantity,
-                        PriceAtPurchase = ProductVariantPricing.ResolveUnitPrice(product, variant)
+                        PriceAtPurchase = unitPrices[item.Id]
                     };
                 }).ToList()
             };
@@ -242,6 +269,9 @@ public sealed class OrderService : IOrderService
 
             // Checkout decrements product stock, which is part of the cached catalog.
             _cache.RemoveByPrefix(CacheKeys.ProductsPrefix);
+            _cache.RemoveByPrefix(CacheKeys.CatalogPrefix);
+
+            await TryRecalculateBadgesAsync(productIds, cancellationToken);
 
             Achievement? newAchievement = null;
 
@@ -396,6 +426,14 @@ public sealed class OrderService : IOrderService
         await _dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
+        await TryNotifyAsync(
+            order.UserId,
+            NotificationTypes.OrderStatusChanged,
+            "Статус заказа изменён",
+            $"Заказ №{order.Id}: {DescribeOrderStatus(newStatus)}.",
+            new { orderId = order.Id, status = newStatus.ToString().ToLowerInvariant() },
+            cancellationToken);
+
         return (true, 200, null, order);
     }
 
@@ -536,6 +574,25 @@ public sealed class OrderService : IOrderService
             await _dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
 
+            _cache.RemoveByPrefix(CacheKeys.ProductsPrefix);
+            _cache.RemoveByPrefix(CacheKeys.CatalogPrefix);
+
+            await TryRecalculateBadgesAsync(
+                order.OrderItems
+                    .Where(item => item.ProductId.HasValue)
+                    .Select(item => item.ProductId!.Value)
+                    .Distinct()
+                    .ToArray(),
+                cancellationToken);
+
+            await TryNotifyAsync(
+                order.UserId,
+                NotificationTypes.OrderCancelled,
+                "Заказ отменён",
+                $"Заказ №{order.Id} отменён, средства возвращены на баланс.",
+                new { orderId = order.Id, refundedAmount = order.TotalAmount },
+                cancellationToken);
+
             return (true, 200, null, order);
         }
         catch (PostgresException ex)
@@ -559,4 +616,64 @@ public sealed class OrderService : IOrderService
         variant is null
             ? $"Insufficient stock for '{product.Name}'."
             : $"Insufficient stock for '{product.Name} / {variant.Name}'.";
+
+    private async Task TryRecalculateBadgesAsync(
+        IReadOnlyCollection<int> productIds,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            foreach (var productId in productIds.Distinct())
+            {
+                await _badgeMaintenance.RecalculateForProductAsync(
+                    productId,
+                    cancellationToken);
+            }
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(
+                exception,
+                "Failed to recalculate badges after an order operation");
+        }
+    }
+
+    private async Task TryNotifyAsync(
+        Guid userId,
+        string type,
+        string title,
+        string message,
+        object? data,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _notificationService.CreateAsync(
+                userId,
+                type,
+                title,
+                message,
+                data,
+                cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(
+                exception,
+                "Failed to create notification {NotificationType} for user {UserId}",
+                type,
+                userId);
+        }
+    }
+
+    private static string DescribeOrderStatus(OrderStatus status) => status switch
+    {
+        OrderStatus.Paid => "оплачен",
+        OrderStatus.Processing => "принят в обработку",
+        OrderStatus.Ready => "готов к выдаче",
+        OrderStatus.Delivered => "выдан",
+        OrderStatus.Cancelled => "отменён",
+        OrderStatus.Refunded => "возвращён",
+        _ => status.ToString()
+    };
 }
