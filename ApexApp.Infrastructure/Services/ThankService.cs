@@ -216,12 +216,20 @@ public sealed class ThankService : IThankService
         return ThanksResult.Ok(thank, newAchievement);
     }
 
-    public async Task<List<Thank>> GetAllAsync(
+    public Task<List<Thank>> GetAllAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        return GetReceivedByUserIdAsync(userId, cancellationToken);
+    }
+
+    public async Task<List<Thank>> GetReceivedByUserIdAsync(
         Guid userId,
         CancellationToken cancellationToken = default)
     {
         return await dbContext.Set<Thank>()
-            .AsNoTracking().Where(t => t.ToUserId == userId )
+            .AsNoTracking()
+            .Where(t => t.ToUserId == userId)
             .Include(t => t.FromUser)
             .Include(t => t.ToUser)
             .OrderByDescending(t => t.CreatedAt)

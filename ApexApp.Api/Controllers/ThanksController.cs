@@ -62,6 +62,39 @@ public sealed class ThanksController : ApiControllerBase
     }
 
     /// <summary>
+    /// Получить список благодарностей, полученных указанным пользователем.
+    /// </summary>
+    /// <remarks>
+    /// Возвращает информацию о благодарностях, которые были отправлены указанному пользователю.
+    /// </remarks>
+    /// <param name="userId">Идентификатор пользователя.</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    /// <returns>Список благодарностей пользователя.</returns>
+    /// <response code="200">Благодарности успешно получены.</response>
+    /// <response code="401">Пользователь не авторизован.</response>
+    [HttpGet("received/{userId:guid}")]
+    public async Task<IActionResult> GetReceivedByUserId(
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        var thanks = await _thankService.GetReceivedByUserIdAsync(
+            userId, cancellationToken);
+
+        return Ok(thanks.Select(t => new
+        {
+            t.Id,
+            t.FromUserId,
+            FromUserName = t.FromUser.Id,
+            t.ToUserId,
+            ToUserName = t.ToUser.Id,
+            t.Amount,
+            t.Message,
+            t.IsPublic,
+            t.CreatedAt
+        }));
+    }
+
+    /// <summary>
     /// Получить список благодарностей пользователя для других пользователей.
     /// </summary>
     /// <remarks>

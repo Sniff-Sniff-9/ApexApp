@@ -13,6 +13,11 @@ public interface IThankService
         Guid userId,
 
         CancellationToken cancellationToken = default);
+
+    Task<List<Thank>> GetReceivedByUserIdAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default);
+
     Task<List<Thank>> GetAllFromMeAsync(
         Guid userId,
         CancellationToken cancellationToken = default);

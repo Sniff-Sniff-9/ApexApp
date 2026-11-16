@@ -100,13 +100,6 @@ public sealed class QuestService(
                 participation => participation.QuestId == questId && participation.UserId == userId,
                 cancellationToken);
 
-        if (participation is null && !IsAvailable(quest, DateTime.UtcNow))
-        {
-            return ServiceResult<QuestDetailsResult>.Fail(
-                409,
-                "Quest is not active or outside its date range.");
-        }
-
         var steps = quest.QuestSteps
             .OrderBy(step => step.SortOrder)
             .ThenBy(step => step.Id)
