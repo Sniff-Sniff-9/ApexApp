@@ -32,8 +32,8 @@ public sealed class AnalyticsQueryRequest
 /// <param name="PreviousTo">Конец предыдущего окна (UTC).</param>
 /// <param name="Granularity">Гранулярность рядов.</param>
 /// <param name="AsOf">Момент расчёта (UTC).</param>
-/// <param name="TimeZone">Часовой пояс границ корзин.</param>
-/// <param name="Caveats">Ограничения интерпретации данных.</param>
+/// <param name="TimeZones">Часовой пояс границ корзин.</param>
+/// 
 public sealed record AnalyticsRangeDto(
     DateTime From,
     DateTime To,
@@ -41,8 +41,7 @@ public sealed record AnalyticsRangeDto(
     DateTime PreviousTo,
     string Granularity,
     DateTime AsOf,
-    string TimeZone,
-    IReadOnlyList<string> Caveats)
+    string TimeZones)
 {
     /// <summary>Создаёт DTO из результата сервиса.</summary>
     /// <param name="range">Окно расчёта.</param>
@@ -54,8 +53,7 @@ public sealed record AnalyticsRangeDto(
         range.PreviousTo,
         range.GranularityCode,
         range.AsOf,
-        range.TimeZone,
-        range.Caveats);
+        range.TimeZone);
 }
 
 /// <summary>

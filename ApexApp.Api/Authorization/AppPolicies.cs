@@ -31,4 +31,13 @@ public static class AppPolicies
 
     /// <summary>Доступ к аналитике межотдельского взаимодействия.</summary>
     public const string ViewCollaborationAnalytics = "ViewCollaborationAnalytics";
+
+    /// <summary>Доступ к генерации черновиков текстов модуля ИИ.</summary>
+    public const string UseAiContent = "UseAiContent";
+
+    /// <summary>Доступ к рекомендациям модуля ИИ по вовлечённости.</summary>
+    public const string UseAiEngagement = "UseAiEngagement";
+
+    /// <summary>Доступ к рекомендациям модуля ИИ по каталогу наград.</summary>
+    public const string UseAiMerchandising = "UseAiMerchandising";
 }

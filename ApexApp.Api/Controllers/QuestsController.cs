@@ -489,10 +489,11 @@ public sealed class QuestsController(IQuestService questService) : ApiController
     /// <summary>
     /// Создать квест.
     /// </summary>
-    /// <param name="request">Данные квеста.</param>
+    /// <remarks>Квест создаётся вместе с шагами; хотя бы один шаг обязателен.</remarks>
+    /// <param name="request">Данные квеста и его шаги.</param>
     /// <param name="cancellationToken">Токен отмены.</param>
     /// <response code="201">Квест успешно создан.</response>
-    /// <response code="400">Некорректные данные квеста.</response>
+    /// <response code="400">Некорректные данные квеста или отсутствуют шаги.</response>
     /// <response code="401">Пользователь не авторизован.</response>
     /// <response code="403">Недостаточно прав.</response>
     [HttpPost]
@@ -520,6 +521,7 @@ public sealed class QuestsController(IQuestService questService) : ApiController
                 request.StartAt,
                 request.EndAt,
                 request.IsActive),
+            ToStepCommands(request.Steps),
             userId.Value,
             cancellationToken);
 
@@ -997,7 +999,7 @@ public sealed class QuestsController(IQuestService questService) : ApiController
             quest.IsActive,
             quest.StartAt,
             quest.EndAt,
-            0,
+            quest.QuestSteps.Count,
             0,
             0,
             quest.CreatedBy,
@@ -1077,6 +1079,22 @@ public sealed class QuestsController(IQuestService questService) : ApiController
         bool? isRequired,
         string? completionData) =>
         new(title, description, completionType, sortOrder ?? 0, isRequired ?? true, completionData);
+
+    private static IReadOnlyList<QuestStepCommand> ToStepCommands(
+        IReadOnlyList<CreateQuestStepRequest>? steps) =>
+        steps is null
+            ? []
+            : steps
+                .Select(step => step is null
+                    ? new QuestStepCommand(null, null, null, 0, true, null)
+                    : ToCommand(
+                        step.Title,
+                        step.Description,
+                        step.CompletionType,
+                        step.SortOrder,
+                        step.IsRequired,
+                        step.CompletionData))
+                .ToList();
 
     private static string? ValidatePaging(int page, int pageSize) =>
         page < 1

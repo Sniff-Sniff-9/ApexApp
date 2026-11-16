@@ -56,7 +56,7 @@ public sealed record ActivityFormatDto(
 /// <param name="Economy">Баллы и заказы.</param>
 /// <param name="Deltas">Изменения к предыдущему окну.</param>
 /// <param name="Formats">Сравнение форматов.</param>
-/// <param name="Caveats">Ограничения интерпретации.</param>
+
 public sealed record PlatformOverviewDto(
     AnalyticsRangeDto Range,
     IReadOnlyList<MetricDto> Headcount,
@@ -64,8 +64,7 @@ public sealed record PlatformOverviewDto(
     IReadOnlyList<MetricDto> Volume,
     IReadOnlyList<MetricDto> Economy,
     IReadOnlyList<MetricDeltaDto> Deltas,
-    IReadOnlyList<ActivityFormatDto> Formats,
-    IReadOnlyList<string> Caveats)
+    IReadOnlyList<ActivityFormatDto> Formats)
 {
     /// <summary>Создаёт DTO из результата сервиса.</summary>
     /// <param name="overview">Обзор платформы.</param>
@@ -77,8 +76,7 @@ public sealed record PlatformOverviewDto(
         overview.Volume.Select(MetricDto.From).ToList(),
         overview.Economy.Select(MetricDto.From).ToList(),
         overview.Deltas.Select(MetricDeltaDto.From).ToList(),
-        overview.Formats.Select(ActivityFormatDto.From).ToList(),
-        overview.Caveats);
+        overview.Formats.Select(ActivityFormatDto.From).ToList());
 }
 
 /// <summary>
@@ -149,12 +147,11 @@ public sealed record ActivityListItemDto(
 /// <param name="Items">Активности в порядке сортировки.</param>
 /// <param name="TotalCount">Всего активностей до ограничения.</param>
 /// <param name="Range">Окно расчёта.</param>
-/// <param name="Caveats">Ограничения интерпретации.</param>
+
 public sealed record ActivityListDto(
     IReadOnlyList<ActivityListItemDto> Items,
     int TotalCount,
-    AnalyticsRangeDto Range,
-    IReadOnlyList<string> Caveats)
+    AnalyticsRangeDto Range)
 {
     /// <summary>Создаёт DTO из результата сервиса.</summary>
     /// <param name="result">Результат списка.</param>
@@ -162,8 +159,7 @@ public sealed record ActivityListDto(
     public static ActivityListDto From(ActivityAnalyticsResult result) => new(
         result.Items.Select(ActivityListItemDto.From).ToList(),
         result.TotalCount,
-        AnalyticsRangeDto.Create(result.Range),
-        result.Caveats);
+        AnalyticsRangeDto.Create(result.Range));
 }
 
 /// <summary>
@@ -236,7 +232,6 @@ public sealed record StepDropOffDto(
 /// <param name="Funnel">Воронка участия.</param>
 /// <param name="Steps">Прохождение шагов задания.</param>
 /// <param name="Series">Ряд активности.</param>
-/// <param name="Caveats">Ограничения интерпретации.</param>
 public sealed record ActivityDetailDto(
     string Format,
     long Id,
@@ -249,8 +244,7 @@ public sealed record ActivityDetailDto(
     IReadOnlyList<MetricDto> Metrics,
     IReadOnlyList<FunnelStepDto> Funnel,
     IReadOnlyList<StepDropOffDto> Steps,
-    IReadOnlyList<SeriesPointDto> Series,
-    IReadOnlyList<string> Caveats)
+    IReadOnlyList<SeriesPointDto> Series)
 {
     /// <summary>Создаёт DTO из результата сервиса.</summary>
     /// <param name="detail">Детали активности.</param>
@@ -267,7 +261,6 @@ public sealed record ActivityDetailDto(
         detail.Metrics.Select(MetricDto.From).ToList(),
         detail.Funnel.Select(FunnelStepDto.From).ToList(),
         detail.Steps.Select(StepDropOffDto.From).ToList(),
-        detail.Series.Select(SeriesPointDto.From).ToList(),
-        detail.Caveats);
+        detail.Series.Select(SeriesPointDto.From).ToList());
 }
 

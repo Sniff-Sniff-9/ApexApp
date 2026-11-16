@@ -87,13 +87,14 @@ public sealed class RoleManagementService : IRoleManagementService
         var targetIsSuperAdmin = existingRoleCodes
             .Contains(RoleCodes.SuperAdmin, StringComparer.OrdinalIgnoreCase);
 
-        // A superadmin's roles are immutable to every other superadmin. Self-modification
-        // is already blocked above, so this protects the highest-privilege accounts.
-        if (targetIsSuperAdmin && actorUserId != targetUserId)
+        // The main administrator (<c>superadmin</c>, «Главный администратор») is protected:
+        // no one, including another superadmin, may change the roles of such an account.
+        // Self-modification is already blocked above, so this closes every remaining path.
+        if (targetIsSuperAdmin)
         {
             return ServiceResult<CurrentUserProfile>.Fail(
                 403,
-                "A superadmin cannot change another superadmin's roles.");
+                "The main administrator's role cannot be changed.");
         }
 
         var distinctCodes = roleCodes
@@ -111,25 +112,29 @@ public sealed class RoleManagementService : IRoleManagementService
             return ServiceResult<CurrentUserProfile>.Fail(400, "One or more role codes are invalid.");
         }
 
-        var incomingIsSuperAdmin = roles.Any(role =>
-            string.Equals(role.Code, RoleCodes.SuperAdmin, StringComparison.OrdinalIgnoreCase));
+        var incomingIsManager = roles.Any(role =>
+            string.Equals(role.Code, RoleCodes.Manager, StringComparison.OrdinalIgnoreCase));
 
-        if (targetIsSuperAdmin && !incomingIsSuperAdmin)
+        // A department can have only one active manager. The check also runs when the
+        // target is the current manager, because the target itself is excluded.
+        if (incomingIsManager)
         {
-            var activeSuperAdmins = await (
-                    from userRole in _dbContext.UserRoles.AsNoTracking()
-                    join user in _dbContext.Users.AsNoTracking() on userRole.UserId equals user.Id
-                    where user.IsActive
-                          && userRole.Role.Code.ToLower() == RoleCodes.SuperAdmin
-                    select userRole.UserId)
-                .Distinct()
-                .CountAsync(cancellationToken);
+            var departmentId = await _dbContext.Users
+                .AsNoTracking()
+                .Where(user => user.Id == targetUserId)
+                .Select(user => user.DepartmentId)
+                .FirstAsync(cancellationToken);
 
-            if (activeSuperAdmins <= 1)
+            if (departmentId is int id
+                && await DepartmentManagerGuard.HasOtherActiveManagerAsync(
+                    _dbContext,
+                    id,
+                    targetUserId,
+                    cancellationToken))
             {
                 return ServiceResult<CurrentUserProfile>.Fail(
                     409,
-                    "The last active superadmin cannot lose the superadmin role.");
+                    DepartmentManagerGuard.DepartmentHasManagerMessage);
             }
         }
 

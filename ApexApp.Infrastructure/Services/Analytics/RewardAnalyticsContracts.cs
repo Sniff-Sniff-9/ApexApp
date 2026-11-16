@@ -63,12 +63,11 @@ public sealed record RewardCategoryRow(
 /// <param name="Items">Товары в порядке убывания спроса.</param>
 /// <param name="TotalCount">Общее количество товаров до ограничения «топ N».</param>
 /// <param name="Range">Окно расчёта.</param>
-/// <param name="Caveats">Ограничения интерпретации.</param>
+
 public sealed record RewardCatalogResult(
     IReadOnlyList<RewardCatalogRow> Items,
     int TotalCount,
-    AnalyticsRange Range,
-    IReadOnlyList<string> Caveats);
+    AnalyticsRange Range);
 
 /// <summary>
 /// Поток баллов по типу транзакции или источнику награды.
@@ -99,7 +98,7 @@ public sealed record PointsFlowRow(
 /// <param name="LedgerPointsSpent">Списания по журналу транзакций окна.</param>
 /// <param name="IsReconciled">Признак совпадения заказов и журнала.</param>
 /// <param name="Range">Окно расчёта.</param>
-/// <param name="Caveats">Ограничения интерпретации.</param>
+
 public sealed record RewardEconomy(
     IReadOnlyList<PointsFlowRow> EarnedByType,
     IReadOnlyList<PointsFlowRow> EarnedBySource,
@@ -111,8 +110,7 @@ public sealed record RewardEconomy(
     long OrdersPointsSpent,
     long LedgerPointsSpent,
     bool IsReconciled,
-    AnalyticsRange Range,
-    IReadOnlyList<string> Caveats);
+    AnalyticsRange Range);
 
 /// <summary>
 /// Заказы в разрезе статуса.
@@ -140,7 +138,7 @@ public sealed record OrderStatusRow(
 /// <param name="DeliveredOrders">Доставленные заказы.</param>
 /// <param name="ByStatus">Распределение по статусам.</param>
 /// <param name="Range">Окно расчёта.</param>
-/// <param name="Caveats">Ограничения интерпретации.</param>
+
 public sealed record OrderAnalytics(
     long Orders,
     long Units,
@@ -151,8 +149,7 @@ public sealed record OrderAnalytics(
     long CancelledOrders,
     long DeliveredOrders,
     IReadOnlyList<OrderStatusRow> ByStatus,
-    AnalyticsRange Range,
-    IReadOnlyList<string> Caveats);
+    AnalyticsRange Range);
 
 /// <summary>
 /// Спрос на вариант товара. Вариант хранит собственные цену и остаток, поэтому
@@ -196,12 +193,11 @@ public sealed record RewardVariantRow(
 /// <param name="Items">Варианты в порядке убывания спроса.</param>
 /// <param name="TotalCount">Общее количество вариантов до ограничения «топ N».</param>
 /// <param name="Range">Окно расчёта.</param>
-/// <param name="Caveats">Ограничения интерпретации.</param>
+
 public sealed record RewardVariantResult(
     IReadOnlyList<RewardVariantRow> Items,
     int TotalCount,
-    AnalyticsRange Range,
-    IReadOnlyList<string> Caveats);
+    AnalyticsRange Range);
 
 /// <summary>
 /// Аналитика вознаграждений и каталога.

@@ -53,11 +53,10 @@ public sealed record DepartmentRow(
 /// </summary>
 /// <param name="Rows">Отделы в порядке убывания места.</param>
 /// <param name="Range">Окно расчёта.</param>
-/// <param name="Caveats">Ограничения интерпретации.</param>
+/// 
 public sealed record DepartmentAnalyticsResult(
     IReadOnlyList<DepartmentRow> Rows,
-    AnalyticsRange Range,
-    IReadOnlyList<string> Caveats);
+    AnalyticsRange Range);
 
 /// <summary>
 /// Детализация одного отдела.
@@ -66,13 +65,12 @@ public sealed record DepartmentAnalyticsResult(
 /// <param name="Series">Ряд участников отдела.</param>
 /// <param name="Formats">Сравнение форматов внутри отдела.</param>
 /// <param name="Range">Окно расчёта.</param>
-/// <param name="Caveats">Ограничения интерпретации.</param>
+
 public sealed record DepartmentDetailResult(
     DepartmentRow Row,
     AnalyticsSeries Series,
     IReadOnlyList<ActivityFormatRow> Formats,
-    AnalyticsRange Range,
-    IReadOnlyList<string> Caveats);
+    AnalyticsRange Range);
 
 /// <summary>
 /// Аналитика отделов.

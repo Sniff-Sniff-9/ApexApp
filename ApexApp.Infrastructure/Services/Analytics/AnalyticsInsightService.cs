@@ -61,8 +61,8 @@ public sealed class AnalyticsInsightService(
         AddDataQualityInsight(insights, population);
         AddPointsInsight(insights, overview);
         AddCollaborationInsight(insights, collaboration.IsSuccess ? collaboration.Value! : null);
-        await AddRewardInsightsAsync(insights, overview, cancellationToken);
-        await AddQuestStepInsightsAsync(insights, overview, cancellationToken);
+        //await AddRewardInsightsAsync(insights, overview, cancellationToken);
+        //await AddQuestStepInsightsAsync(insights, overview, cancellationToken);
 
         var ordered = insights
             .OrderBy(insight => SeverityRank(insight.Severity))
@@ -437,24 +437,25 @@ public sealed class AnalyticsInsightService(
         }
 
         var starvedVariants = await dbContext.ProductVariants
-            .AsNoTracking()
-            .Where(variant =>
-                variant.IsActive
-                && variant.Stock == 0
-                && dbContext.OrderItems.Any(item =>
-                    item.ProductVariantId == variant.Id
-                    && item.Order.CreatedAt >= overview.Range.From
-                    && item.Order.CreatedAt < overview.Range.To
-                    && item.Order.Status != OrderStatus.Cancelled
-                    && item.Order.Status != OrderStatus.Refunded))
-            .Select(variant => new
-            {
-                variant.Id,
-                variant.Name,
-                ProductName = variant.Product.Name
-            })
-            .Take(5)
-            .ToListAsync(cancellationToken);
+    .AsNoTracking()
+    .AsSplitQuery()
+    .Where(variant =>
+        variant.IsActive
+        && variant.Stock == 0
+        && dbContext.OrderItems.Any(item =>
+            item.ProductVariantId == variant.Id
+            && item.Order.CreatedAt >= overview.Range.From
+            && item.Order.CreatedAt < overview.Range.To
+            && item.Order.Status != OrderStatus.Cancelled
+            && item.Order.Status != OrderStatus.Refunded))
+    .Select(variant => new
+    {
+        variant.Id,
+        variant.Name,
+        ProductName = variant.Product.Name
+    })
+    .Take(5)
+    .ToListAsync(cancellationToken);
 
         if (starvedVariants.Count > 0)
         {

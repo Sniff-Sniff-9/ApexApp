@@ -117,8 +117,7 @@ public sealed class DepartmentAnalyticsService(
             row,
             seriesResult.Value!,
             formats,
-            listResult.Value.Range,
-            listResult.Value.Caveats));
+            listResult.Value.Range));
     }
 
     private async Task<DepartmentAnalyticsResult> BuildAsync(
@@ -168,22 +167,13 @@ public sealed class DepartmentAnalyticsService(
         AssignRanks(rows);
         AssignRankChanges(rows, rollup);
 
-        var caveats = new List<string>(range.Caveats)
-        {
-            "Активность относится к текущему отделу сотрудника: история переводов между отделами не хранится.",
-            "Отделы с численностью меньше " + _options.MinCohort +
-            " сотрудников не участвуют в рейтинге: на малых выборках доли недостоверны.",
-            "Средний балл вовлечённости включает сотрудников без активности с нулевым баллом."
-        };
-
         return new DepartmentAnalyticsResult(
             rows
                 .OrderBy(row => row.Rank ?? int.MaxValue)
                 .ThenByDescending(row => row.ActivityRate ?? -1d)
                 .ThenBy(row => row.Department, StringComparer.Ordinal)
                 .ToList(),
-            range,
-            caveats);
+            range);
     }
 
     private DepartmentRow BuildRow(

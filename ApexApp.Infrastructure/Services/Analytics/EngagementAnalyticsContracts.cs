@@ -50,12 +50,11 @@ public sealed record EngagementTrendPoint(
 /// <param name="Points">Точки тренда в порядке возрастания времени.</param>
 /// <param name="WindowDays">Длина окна расчёта в днях.</param>
 /// <param name="Range">Окно расчёта.</param>
-/// <param name="Caveats">Ограничения интерпретации.</param>
+
 public sealed record EngagementTrendResult(
     IReadOnlyList<EngagementTrendPoint> Points,
     int WindowDays,
-    AnalyticsRange Range,
-    IReadOnlyList<string> Caveats);
+    AnalyticsRange Range);
 
 /// <summary>
 /// Сотрудник со снижающейся вовлечённостью.
@@ -89,15 +88,14 @@ public sealed record DecliningEmployee(
 /// <param name="EvaluatedEmployees">Количество активных сотрудников, участвовавших в расчёте.</param>
 /// <param name="Threshold">Порог падения в пунктах.</param>
 /// <param name="Range">Окно расчёта.</param>
-/// <param name="Caveats">Ограничения интерпретации.</param>
+
 public sealed record DecliningEmployeesResult(
     IReadOnlyList<DecliningEmployee> Employees,
     int TotalCount,
     long SilentEmployees,
     long EvaluatedEmployees,
     double Threshold,
-    AnalyticsRange Range,
-    IReadOnlyList<string> Caveats);
+    AnalyticsRange Range);
 
 /// <summary>
 /// Аналитика вовлечённости: исторический тренд и сотрудники со снижением активности.

@@ -152,8 +152,7 @@ public sealed class ActivityAnalyticsService(
         return new ActivityAnalyticsResult(
             ordered.Take(take).ToList(),
             items.Count,
-            range,
-            range.Caveats);
+            range);
     }
 
     private async Task<List<ActivityRow>> LoadEventRowsAsync(
@@ -541,12 +540,6 @@ public sealed class ActivityAnalyticsService(
             MetricValue.Rate("reward_claim_rate", "Доля полученных наград", claimed, attended, _options.MinCohort)
         };
 
-        var caveats = new List<string>(range.Caveats)
-        {
-            "Регистрация может быть отменена и восстановлена: момент регистрации перезаписывается, " +
-            "поэтому воронка отражает текущее состояние, а не полную историю."
-        };
-
         return new ActivityDetail(
             "event",
             eventItem.Id,
@@ -559,8 +552,7 @@ public sealed class ActivityAnalyticsService(
             metrics,
             funnel,
             [],
-            series,
-            caveats);
+            series);
     }
 
     private async Task<ActivityDetail?> BuildQuestDetailAsync(
@@ -670,12 +662,6 @@ public sealed class ActivityAnalyticsService(
                     null)
         };
 
-        var caveats = new List<string>(range.Caveats)
-        {
-            "Прохождение шагов учитывает доказательства, загруженные повторно: " +
-            "момент выполнения шага может быть обновлён."
-        };
-
         return new ActivityDetail(
             "quest",
             quest.Id,
@@ -688,8 +674,7 @@ public sealed class ActivityAnalyticsService(
             metrics,
             funnel,
             steps,
-            series,
-            caveats);
+            series);
     }
 
     private async Task<ActivityDetail?> BuildSurveyDetailAsync(
@@ -740,12 +725,6 @@ public sealed class ActivityAnalyticsService(
                 _options.MinCohort)
         };
 
-        var caveats = new List<string>(range.Caveats)
-        {
-            "Опрос может допускать несколько ответов одного сотрудника: " +
-            "число ответов и число респондентов различаются."
-        };
-
         return new ActivityDetail(
             "survey",
             survey.Id,
@@ -758,8 +737,7 @@ public sealed class ActivityAnalyticsService(
             metrics,
             funnel,
             [],
-            series,
-            caveats);
+            series);
     }
 
     private async Task<IReadOnlyList<AnalyticsSeriesPoint>> LoadDetailSeriesAsync(

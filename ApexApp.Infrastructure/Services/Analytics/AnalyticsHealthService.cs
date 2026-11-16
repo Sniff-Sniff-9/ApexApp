@@ -271,27 +271,14 @@ public sealed class AnalyticsHealthService(
                 null,
                 "Отдел не участвует в сравнении, пока в нём нет активных сотрудников."));
         }
-
-        var caveats = new List<string>(3)
-        {
-            "Проверки отражают текущее состояние данных и не заменяют сверку с внешними системами.",
-            "Истории изменения статусов и отделов нет: часть показателей невозможно восстановить за прошлые периоды.",
-            "Цифровые товары не участвуют в заказах, поэтому их спрос не измеряется."
-        };
-
-        if (population.ActiveUsers < _options.MinCohort)
-        {
-            caveats.Add(
-                $"Активных сотрудников меньше {_options.MinCohort}: доли и рейтинги скрываются как недостоверные.");
-        }
+       
 
         return new AnalyticsHealth(
             checks
                 .OrderBy(check => SeverityRank(check.Severity))
                 .ThenBy(check => check.Code, StringComparer.Ordinal)
                 .ToList(),
-            asOf,
-            caveats);
+            asOf);
     }
 
     private static double Share(long value, long total) => total <= 0 ? 0d : (double)value / total;

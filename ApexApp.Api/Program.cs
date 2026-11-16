@@ -2,21 +2,27 @@ using ApexApp.Api.Analytics;
 using ApexApp.Api.Authorization;
 using ApexApp.Api.Caching;
 using ApexApp.Api.Diagnostics;
+using ApexApp.Api.Extensions;
 using ApexApp.Api.Swagger;
 using ApexApp.Api.Workers;
 using ApexApp.Infrastructure.Auth;
 using ApexApp.Infrastructure.Caching;
+using ApexApp.Infrastructure.Common;
 using ApexApp.Infrastructure.Data;
 using ApexApp.Infrastructure.Repositories;
 using ApexApp.Infrastructure.Services;
+using ApexApp.Infrastructure.Services.Ai;
 using ApexApp.Infrastructure.Services.Analytics;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using System.Reflection;
 using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -132,6 +138,58 @@ builder.Services.AddScoped<ICollaborationAnalyticsService, CollaborationAnalytic
 builder.Services.AddScoped<IAnalyticsInsightService, AnalyticsInsightService>();
 builder.Services.AddScoped<IAnalyticsHealthService, AnalyticsHealthService>();
 builder.Services.AddScoped<IAnalyticsScopeResolver, AnalyticsScopeResolver>();
+
+// Модуль ИИ: провайдер DeepSeek, сборка промптов и рекомендации. Ключ API задаётся
+// только через User Secrets или переменные окружения и никогда не хранится в коде.
+builder.Services
+    .AddOptions<DeepSeekOptions>()
+    .Bind(builder.Configuration.GetSection(DeepSeekOptions.SectionName))
+    .PostConfigure(aiOptions =>
+    {
+        if (string.IsNullOrWhiteSpace(aiOptions.ApiKey))
+        {
+            aiOptions.ApiKey = builder.Configuration["DEEPSEEK_API_KEY"] ?? string.Empty;
+        }
+    });
+
+builder.Services.AddHttpClient<IAiClient, DeepSeekAiClient>((serviceProvider, client) =>
+{
+    var aiOptions = serviceProvider.GetRequiredService<IOptions<DeepSeekOptions>>().Value;
+    var baseUrl = string.IsNullOrWhiteSpace(aiOptions.BaseUrl)
+        ? "https://api.deepseek.com"
+        : aiOptions.BaseUrl.TrimEnd('/');
+
+    client.BaseAddress = new Uri(baseUrl + "/");
+
+    // Таймаут задаётся на каждый запрос, чтобы истёкший вызов возвращал 504.
+    client.Timeout = Timeout.InfiniteTimeSpan;
+});
+
+builder.Services.AddScoped<AiCompletionExecutor>();
+builder.Services.AddScoped<AiStatisticsDigestBuilder>();
+builder.Services.AddScoped<IAiContentService, AiContentService>();
+builder.Services.AddScoped<IAiRecommendationService, AiRecommendationService>();
+
+// Ограничение частоты обращений к модулю ИИ: одно окно на администратора.
+builder.Services.AddRateLimiter(rateLimiterOptions =>
+{
+    rateLimiterOptions.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    rateLimiterOptions.AddPolicy(AiRateLimiting.PolicyName, context =>
+    {
+        var userId = context.User.GetUserId();
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            userId?.ToString() ?? context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = AiRateLimiting.PermitLimit,
+                Window = AiRateLimiting.Window,
+                QueueLimit = 0,
+                AutoReplenishment = true
+            });
+    });
+});
 
 builder.Services
     .AddControllers()
@@ -348,9 +406,51 @@ builder.Services.AddAuthorization(options =>
             RoleCodes.SuperAdmin,
             RoleCodes.HumanResources));
     });
+
+    // Модуль ИИ. Генерация черновиков доступна ролям, которые создают активности
+    // и товары; рекомендации по людям — только ролям, работающим с персоналом.
+    options.AddPolicy(AppPolicies.UseAiContent, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(new ActiveUserRequirement());
+        policy.AddRequirements(new AnyRoleRequirement(
+            RoleCodes.Admin,
+            RoleCodes.SuperAdmin,
+            RoleCodes.HumanResources,
+            RoleCodes.Merchandiser));
+    });
+
+    options.AddPolicy(AppPolicies.UseAiEngagement, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(new ActiveUserRequirement());
+        policy.AddRequirements(new AnyRoleRequirement(
+            RoleCodes.Admin,
+            RoleCodes.SuperAdmin,
+            RoleCodes.HumanResources));
+    });
+
+    options.AddPolicy(AppPolicies.UseAiMerchandising, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(new ActiveUserRequirement());
+        policy.AddRequirements(new AnyRoleRequirement(
+            RoleCodes.Admin,
+            RoleCodes.SuperAdmin,
+            RoleCodes.Merchandiser));
+    });
 });
 
 var app = builder.Build();
+
+var deepSeekOptions = app.Services.GetRequiredService<IOptions<DeepSeekOptions>>().Value;
+
+if (!deepSeekOptions.IsConfigured)
+{
+    app.Logger.LogWarning(
+        "DeepSeek API key is not configured. AI endpoints will return 503. " +
+        "Set DeepSeek:ApiKey in user secrets or the DeepSeek__ApiKey environment variable.");
+}
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -366,6 +466,8 @@ app.UseHttpsRedirection();
 app.UseAuthentication();
 
 app.UseAuthorization();
+
+app.UseRateLimiter();
 
 app.MapControllers();
 

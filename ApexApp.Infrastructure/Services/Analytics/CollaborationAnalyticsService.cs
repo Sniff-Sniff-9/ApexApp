@@ -60,8 +60,7 @@ public sealed class CollaborationAnalyticsService(
                 range.Granularity,
                 range.AsOf,
                 range.TimeZone,
-                range.TimeZoneOffsetMinutes,
-                range.Caveats),
+                range.TimeZoneOffsetMinutes),
             cancellationToken);
 
         var series = await LoadSeriesAsync(range, cancellationToken);
@@ -85,15 +84,6 @@ public sealed class CollaborationAnalyticsService(
                 row.IsCross))
             .ToList();
 
-        var caveats = new List<string>(range.Caveats)
-        {
-            "Взаимодействие измеряется только отправленными благодарностями: " +
-            "других сущностей совместной работы в системе нет.",
-            "Повторная благодарность одному сотруднику ограничена семью днями, " +
-            "поэтому частые пары отражают устойчивые связи, а не общее число контактов.",
-            "Матрица агрегирована по отделам; имена сотрудников не раскрываются."
-        };
-
         return new CollaborationThanksResult(
             total,
             cross,
@@ -105,8 +95,7 @@ public sealed class CollaborationAnalyticsService(
                 : null,
             topPairs,
             series,
-            range,
-            caveats);
+            range);
     }
 
     private async Task<IReadOnlyList<PairRow>> LoadPairsAsync(

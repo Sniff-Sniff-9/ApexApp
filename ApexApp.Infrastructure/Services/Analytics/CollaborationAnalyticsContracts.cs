@@ -44,7 +44,7 @@ public sealed record CrossDepartmentSeriesPoint(
 /// <param name="TopPairs">Наиболее частые пары отделов.</param>
 /// <param name="Series">Ряд доли межотдельских благодарностей.</param>
 /// <param name="Range">Окно расчёта.</param>
-/// <param name="Caveats">Ограничения интерпретации.</param>
+
 public sealed record CollaborationThanksResult(
     long Total,
     long CrossDepartment,
@@ -52,8 +52,7 @@ public sealed record CollaborationThanksResult(
     double? PreviousCrossDepartmentShare,
     IReadOnlyList<DepartmentInteractionRow> TopPairs,
     IReadOnlyList<CrossDepartmentSeriesPoint> Series,
-    AnalyticsRange Range,
-    IReadOnlyList<string> Caveats);
+    AnalyticsRange Range);
 
 /// <summary>
 /// Аналитика межотдельского взаимодействия.

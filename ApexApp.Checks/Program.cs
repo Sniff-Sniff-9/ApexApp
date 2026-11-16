@@ -16,6 +16,8 @@ var runner = new CheckRunner();
 
 UnitChecks.Run(runner);
 
+AiChecks.Run(runner);
+
 if (!args.Contains("--unit", StringComparer.OrdinalIgnoreCase))
 {
     var connectionString = await ConnectionResolver.TryResolveAsync();

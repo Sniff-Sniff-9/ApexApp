@@ -65,12 +65,11 @@ public sealed record ActivityRow(
 /// <param name="Items">Активности в порядке сортировки.</param>
 /// <param name="TotalCount">Общее количество активностей до ограничения «топ N».</param>
 /// <param name="Range">Окно расчёта.</param>
-/// <param name="Caveats">Ограничения интерпретации.</param>
+
 public sealed record ActivityAnalyticsResult(
     IReadOnlyList<ActivityRow> Items,
     int TotalCount,
-    AnalyticsRange Range,
-    IReadOnlyList<string> Caveats);
+    AnalyticsRange Range);
 
 /// <summary>
 /// Шаг воронки активности.
@@ -119,7 +118,7 @@ public sealed record ActivityStepDropOff(
 /// <param name="Funnel">Воронка участия.</param>
 /// <param name="Steps">Прохождение шагов задания.</param>
 /// <param name="Series">Ряд активности по корзинам.</param>
-/// <param name="Caveats">Ограничения интерпретации.</param>
+
 public sealed record ActivityDetail(
     string Format,
     long Id,
@@ -132,8 +131,7 @@ public sealed record ActivityDetail(
     IReadOnlyList<MetricValue> Metrics,
     IReadOnlyList<ActivityFunnelStep> Funnel,
     IReadOnlyList<ActivityStepDropOff> Steps,
-    IReadOnlyList<AnalyticsSeriesPoint> Series,
-    IReadOnlyList<string> Caveats);
+    IReadOnlyList<AnalyticsSeriesPoint> Series);
 
 /// <summary>
 /// Аналитика активностей: сравнение форматов, список активностей и детали одной активности.

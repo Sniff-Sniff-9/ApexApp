@@ -177,19 +177,6 @@ public sealed class AnalyticsOverviewService(
             Delta("thanks_sent", "Отправленные благодарности", thanksSent, previousThanksSent)
         };
 
-        var caveats = new List<string>(range.Caveats);
-
-        if (departmentId is not null)
-        {
-            caveats.Add(
-                "Показатели ограничены одним отделом; остатки баллов на балансах показаны по всей платформе, " +
-                "потому что баланс не привязан к отделу.");
-        }
-
-        if (pointsSpent == 0 && previousPointsSpent > 0)
-        {
-            caveats.Add("В текущем окне не было заказов: показатель потраченных баллов равен нулю.");
-        }
 
         return new PlatformOverview(
             range,
@@ -198,8 +185,7 @@ public sealed class AnalyticsOverviewService(
             volumeMetrics,
             economyMetrics,
             deltas,
-            formats,
-            caveats);
+            formats);
     }
 
     private async Task<IReadOnlyList<ActivityFormatRow>> BuildFormatsAsync(

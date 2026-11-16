@@ -20,13 +20,15 @@ namespace ApexApp.Api.DTOs
     /// <param name="StartAt">Дата и время начала.</param>
     /// <param name="EndAt">Дата и время окончания (позже начала).</param>
     /// <param name="IsActive">Признак активности квеста.</param>
+    /// <param name="Steps">Шаги нового квеста; требуется хотя бы один.</param>
     public sealed record CreateQuestRequest(
         string? Title,
         string? Description,
         long? RewardAmount,
         DateTime? StartAt,
         DateTime? EndAt,
-        bool IsActive);
+        bool IsActive,
+        IReadOnlyList<CreateQuestStepRequest>? Steps = null);
 
     /// <summary>
     /// Запрос на обновление квеста.

@@ -78,8 +78,7 @@ public sealed class AnalyticsRangeFactory(IOptions<AnalyticsOptions> options) : 
             query.Granularity,
             asOf,
             _options.TimeZone,
-            (int)offset.TotalMinutes,
-            BuildCaveats(_options.TimeZone, offset)));
+            (int)offset.TotalMinutes));
     }
 
     /// <summary>
@@ -132,27 +131,5 @@ public sealed class AnalyticsRangeFactory(IOptions<AnalyticsOptions> options) : 
             return TimeSpan.Zero;
         }
     }
-
-    private static IReadOnlyList<string> BuildCaveats(string timeZone, TimeSpan offset)
-    {
-        var caveats = new List<string>
-        {
-            "Все окна заданы полуинтервалом [начало, конец) в UTC; действия на границе учитываются один раз.",
-            "Активность по отделам относится к текущему отделу сотрудника: история переводов не хранится.",
-            "Штатная численность отражает текущий статус учётных записей, а не исторический.",
-            "Цифровые товары не могут быть оформлены в заказ, поэтому спрос на них не измеряется.",
-            "Для строк заказа с вариантом уменьшается остаток варианта, а остаток товара не меняется.",
-            "Корзина очищается при оформлении заказа: исторических данных о брошенных корзинах нет.",
-            "Истории входов нет: активность входа оценивается по последнему входу."
-        };
-
-        if (offset != TimeSpan.Zero)
-        {
-            caveats.Add(
-                $"Границы суток, недель и месяцев считаются в поясе {timeZone} " +
-                $"(смещение {offset.TotalHours:+0.##;-0.##} ч на момент расчёта).");
-        }
-
-        return caveats;
-    }
+   
 }

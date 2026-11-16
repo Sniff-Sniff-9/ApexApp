@@ -24,11 +24,10 @@ public sealed record AnalyticsHealthCheck(
 /// </summary>
 /// <param name="Checks">Проверки в порядке важности.</param>
 /// <param name="AsOf">Момент расчёта (UTC).</param>
-/// <param name="Caveats">Ограничения интерпретации.</param>
+/// 
 public sealed record AnalyticsHealth(
     IReadOnlyList<AnalyticsHealthCheck> Checks,
-    DateTime AsOf,
-    IReadOnlyList<string> Caveats);
+    DateTime AsOf);
 
 /// <summary>
 /// Проверки качества данных аналитики.

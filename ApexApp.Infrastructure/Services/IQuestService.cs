@@ -141,13 +141,15 @@ public interface IQuestService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Создаёт квест.
+    /// Создаёт квест вместе с шагами. Квест нельзя создать без шагов.
     /// </summary>
     /// <param name="command">Данные квеста.</param>
+    /// <param name="steps">Шаги нового квеста; требуется хотя бы один.</param>
     /// <param name="createdBy">Идентификатор создателя.</param>
     /// <param name="cancellationToken">Токен отмены.</param>
     Task<ServiceResult<Quest>> CreateAsync(
         QuestCommand command,
+        IReadOnlyList<QuestStepCommand> steps,
         Guid createdBy,
         CancellationToken cancellationToken = default);
 

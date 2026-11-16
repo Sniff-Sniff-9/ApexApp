@@ -64,12 +64,11 @@ public sealed record RewardCatalogItemDto(
 /// <param name="Items">Товары в порядке убывания спроса.</param>
 /// <param name="TotalCount">Всего товаров до ограничения.</param>
 /// <param name="Range">Окно расчёта.</param>
-/// <param name="Caveats">Ограничения интерпретации.</param>
+
 public sealed record RewardCatalogDto(
     IReadOnlyList<RewardCatalogItemDto> Items,
     int TotalCount,
-    AnalyticsRangeDto Range,
-    IReadOnlyList<string> Caveats)
+    AnalyticsRangeDto Range)
 {
     /// <summary>Создаёт DTO из результата сервиса.</summary>
     /// <param name="result">Результат каталога.</param>
@@ -77,8 +76,7 @@ public sealed record RewardCatalogDto(
     public static RewardCatalogDto From(RewardCatalogResult result) => new(
         result.Items.Select(RewardCatalogItemDto.From).ToList(),
         result.TotalCount,
-        AnalyticsRangeDto.Create(result.Range),
-        result.Caveats);
+        AnalyticsRangeDto.Create(result.Range));
 }
 
 /// <summary>
@@ -175,12 +173,11 @@ public sealed record RewardVariantItemDto(
 /// <param name="Items">Варианты в порядке убывания спроса.</param>
 /// <param name="TotalCount">Всего вариантов до ограничения.</param>
 /// <param name="Range">Окно расчёта.</param>
-/// <param name="Caveats">Ограничения интерпретации.</param>
+
 public sealed record RewardVariantListDto(
     IReadOnlyList<RewardVariantItemDto> Items,
     int TotalCount,
-    AnalyticsRangeDto Range,
-    IReadOnlyList<string> Caveats)
+    AnalyticsRangeDto Range)
 {
     /// <summary>Создаёт DTO из результата сервиса.</summary>
     /// <param name="result">Результат аналитики вариантов.</param>
@@ -188,8 +185,7 @@ public sealed record RewardVariantListDto(
     public static RewardVariantListDto From(RewardVariantResult result) => new(
         result.Items.Select(RewardVariantItemDto.From).ToList(),
         result.TotalCount,
-        AnalyticsRangeDto.Create(result.Range),
-        result.Caveats);
+        AnalyticsRangeDto.Create(result.Range));
 }
 
 /// <summary>
@@ -232,7 +228,7 @@ public sealed record PointsFlowDto(
 /// <param name="LedgerPointsSpent">Списания по журналу.</param>
 /// <param name="IsReconciled">Признак совпадения заказов и журнала.</param>
 /// <param name="Range">Окно расчёта.</param>
-/// <param name="Caveats">Ограничения интерпретации.</param>
+
 public sealed record RewardEconomyDto(
     IReadOnlyList<PointsFlowDto> EarnedByType,
     IReadOnlyList<PointsFlowDto> EarnedBySource,
@@ -244,8 +240,7 @@ public sealed record RewardEconomyDto(
     long OrdersPointsSpent,
     long LedgerPointsSpent,
     bool IsReconciled,
-    AnalyticsRangeDto Range,
-    IReadOnlyList<string> Caveats)
+    AnalyticsRangeDto Range)
 {
     /// <summary>Создаёт DTO из результата сервиса.</summary>
     /// <param name="economy">Экономика баллов.</param>
@@ -261,8 +256,7 @@ public sealed record RewardEconomyDto(
         economy.OrdersPointsSpent,
         economy.LedgerPointsSpent,
         economy.IsReconciled,
-        AnalyticsRangeDto.Create(economy.Range),
-        economy.Caveats);
+        AnalyticsRangeDto.Create(economy.Range));
 }
 
 /// <summary>
@@ -301,7 +295,7 @@ public sealed record OrderStatusDto(
 /// <param name="DeliveredOrders">Выданные заказы.</param>
 /// <param name="ByStatus">Распределение по статусам.</param>
 /// <param name="Range">Окно расчёта.</param>
-/// <param name="Caveats">Ограничения интерпретации.</param>
+/// 
 public sealed record OrderAnalyticsDto(
     long Orders,
     long Units,
@@ -312,8 +306,7 @@ public sealed record OrderAnalyticsDto(
     long CancelledOrders,
     long DeliveredOrders,
     IReadOnlyList<OrderStatusDto> ByStatus,
-    AnalyticsRangeDto Range,
-    IReadOnlyList<string> Caveats)
+    AnalyticsRangeDto Range)
 {
     /// <summary>Создаёт DTO из результата сервиса.</summary>
     /// <param name="orders">Аналитика заказов.</param>
@@ -328,8 +321,7 @@ public sealed record OrderAnalyticsDto(
         orders.CancelledOrders,
         orders.DeliveredOrders,
         orders.ByStatus.Select(OrderStatusDto.From).ToList(),
-        AnalyticsRangeDto.Create(orders.Range),
-        orders.Caveats);
+        AnalyticsRangeDto.Create(orders.Range));
 }
 
 /// <summary>
@@ -408,12 +400,11 @@ public sealed record EngagementTrendPointDto(
 /// <param name="Points">Точки тренда.</param>
 /// <param name="WindowDays">Длина окна расчёта.</param>
 /// <param name="Range">Окно расчёта.</param>
-/// <param name="Caveats">Ограничения интерпретации.</param>
+
 public sealed record EngagementTrendDto(
     IReadOnlyList<EngagementTrendPointDto> Points,
     int WindowDays,
-    AnalyticsRangeDto Range,
-    IReadOnlyList<string> Caveats)
+    AnalyticsRangeDto Range)
 {
     /// <summary>Создаёт DTO из результата сервиса.</summary>
     /// <param name="trend">Тренд вовлечённости.</param>
@@ -421,8 +412,7 @@ public sealed record EngagementTrendDto(
     public static EngagementTrendDto From(EngagementTrendResult trend) => new(
         trend.Points.Select(EngagementTrendPointDto.From).ToList(),
         trend.WindowDays,
-        AnalyticsRangeDto.Create(trend.Range),
-        trend.Caveats);
+        AnalyticsRangeDto.Create(trend.Range));
 }
 
 /// <summary>
@@ -472,15 +462,14 @@ public sealed record DecliningEmployeeDto(
 /// <param name="EvaluatedEmployees">Сотрудники в расчёте.</param>
 /// <param name="Threshold">Порог падения.</param>
 /// <param name="Range">Окно расчёта.</param>
-/// <param name="Caveats">Ограничения интерпретации.</param>
+
 public sealed record DecliningEmployeesDto(
     IReadOnlyList<DecliningEmployeeDto> Employees,
     int TotalCount,
     long SilentEmployees,
     long EvaluatedEmployees,
     double Threshold,
-    AnalyticsRangeDto Range,
-    IReadOnlyList<string> Caveats)
+    AnalyticsRangeDto Range)
 {
     /// <summary>Создаёт DTO из результата сервиса.</summary>
     /// <param name="result">Результат списка.</param>
@@ -491,7 +480,6 @@ public sealed record DecliningEmployeesDto(
         result.SilentEmployees,
         result.EvaluatedEmployees,
         result.Threshold,
-        AnalyticsRangeDto.Create(result.Range),
-        result.Caveats);
+        AnalyticsRangeDto.Create(result.Range));
 }
 

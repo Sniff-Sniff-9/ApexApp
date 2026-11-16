@@ -271,10 +271,37 @@ public sealed class UserProfileService : IUserProfileService
             return ServiceResult<CurrentUserProfile>.Fail(404, "User profile was not found.");
         }
 
+        var previousDepartmentId = user.DepartmentId;
+        var wasActive = user.IsActive;
+
         var validationError = ApplyAdminProfileChanges(user, command);
         if (validationError is not null)
         {
             return ServiceResult<CurrentUserProfile>.Fail(400, validationError);
+        }
+
+        // Moving an active manager into a department that already has one, or reactivating
+        // such a manager, would give the department two managers. The department/active
+        // changes are reverted so a rejected update leaves the tracked entity unchanged.
+        var departmentChanged = user.DepartmentId != previousDepartmentId;
+        var becameActive = user.IsActive && !wasActive;
+
+        if (user.IsActive
+            && user.DepartmentId is int departmentId
+            && (departmentChanged || becameActive)
+            && await DepartmentManagerGuard.IsManagerAsync(_dbContext, targetUserId, cancellationToken)
+            && await DepartmentManagerGuard.HasOtherActiveManagerAsync(
+                _dbContext,
+                departmentId,
+                targetUserId,
+                cancellationToken))
+        {
+            user.DepartmentId = previousDepartmentId;
+            user.IsActive = wasActive;
+
+            return ServiceResult<CurrentUserProfile>.Fail(
+                409,
+                DepartmentManagerGuard.DepartmentHasManagerMessage);
         }
 
         user.UpdatedAt = DateTime.UtcNow;

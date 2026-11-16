@@ -43,7 +43,7 @@ public sealed record AnalyticsQuery(
 /// <param name="AsOf">Момент расчёта, общий для всех запросов одного ответа (UTC).</param>
 /// <param name="TimeZone">Часовой пояс границ корзин.</param>
 /// <param name="TimeZoneOffsetMinutes">Смещение часового пояса в минутах на момент <see cref="AsOf"/>.</param>
-/// <param name="Caveats">Ограничения интерпретации данных, действующие для всего ответа.</param>
+
 public sealed record AnalyticsRange(
     DateTime From,
     DateTime To,
@@ -52,8 +52,7 @@ public sealed record AnalyticsRange(
     AnalyticsGranularity Granularity,
     DateTime AsOf,
     string TimeZone,
-    int TimeZoneOffsetMinutes,
-    IReadOnlyList<string> Caveats)
+    int TimeZoneOffsetMinutes)
 {
     /// <summary>Длина текущего окна в днях.</summary>
     public double LengthDays => (To - From).TotalDays;

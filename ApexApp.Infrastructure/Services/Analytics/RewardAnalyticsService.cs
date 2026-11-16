@@ -242,14 +242,7 @@ public sealed class RewardAnalyticsService(
             ? ordered
             : ordered.Take(Math.Clamp(top, 1, _options.MaxTop)).ToList();
 
-        var caveats = new List<string>(range.Caveats)
-        {
-            "Вариант учитывается по order_items.product_variant_id: у заказов, оформленных до поддержки вариантов, это поле пустое.",
-            "Цена варианта берётся из текущего справочника, а фактически оплаченная цена хранится в order_items.price_at_purchase.",
-            "Для строк с вариантом уменьшается остаток варианта; остаток товара в этом случае не меняется."
-        };
-
-        return new RewardVariantResult(limited, ordered.Count, range, caveats);
+        return new RewardVariantResult(limited, ordered.Count, range);
     }
 
     private async Task<RewardCatalogResult> BuildCatalogAsync(
@@ -384,16 +377,10 @@ public sealed class RewardAnalyticsService(
             ? ordered
             : ordered.Take(Math.Clamp(top, 1, _options.MaxTop)).ToList();
 
-        var caveats = new List<string>(range.Caveats)
-        {
-            "Для товаров с вариантами остаток ведётся по вариантам: доля продаж по товару считается только по строкам без варианта."
-        };
-
         return new RewardCatalogResult(
             limited,
             ordered.Count,
-            range,
-            caveats);
+            range);
     }
 
     private async Task<IReadOnlyList<RewardCategoryRow>> BuildCategoriesAsync(
@@ -543,13 +530,6 @@ public sealed class RewardAnalyticsService(
 
         var tolerance = Math.Max(1, (long)Math.Round(ledgerSpent * 0.01d, MidpointRounding.AwayFromZero));
 
-        var caveats = new List<string>(range.Caveats)
-        {
-            "Все суммы выражены во внутренних баллах, а не в деньгах.",
-            "Начислением считаются activity_reward, thanks, achievement_reward, manager_bonus и daily_bonus; " +
-            "ручные корректировки администратора не входят в начисления за активность."
-        };
-
         return new RewardEconomy(
             typeRows,
             sourceRows,
@@ -561,8 +541,7 @@ public sealed class RewardAnalyticsService(
             ordersPoints,
             ledgerSpent,
             Math.Abs(allOrdersPoints - ledgerSpent) <= tolerance,
-            range,
-            caveats);
+            range);
     }
 
     private async Task<OrderAnalytics> BuildOrdersAsync(
@@ -620,13 +599,6 @@ public sealed class RewardAnalyticsService(
             .OrderByDescending(row => row.Orders)
             .ToList();
 
-        var caveats = new List<string>(range.Caveats)
-        {
-            "Стоимость заказа выражена во внутренних баллах.",
-            "Время обработки измеряется от создания до последнего изменения статуса: " +
-            "история статусов не хранится, поэтому значение приблизительное."
-        };
-
         return new OrderAnalytics(
             orders,
             units,
@@ -637,8 +609,7 @@ public sealed class RewardAnalyticsService(
             statusRows.FirstOrDefault(row => row.Status == OrderStatus.Cancelled)?.Orders ?? 0,
             statusRows.FirstOrDefault(row => row.Status == OrderStatus.Delivered)?.Orders ?? 0,
             byStatus,
-            range,
-            caveats);
+            range);
     }
 
     private static string TransactionTypeTitle(TransactionType type) => type switch

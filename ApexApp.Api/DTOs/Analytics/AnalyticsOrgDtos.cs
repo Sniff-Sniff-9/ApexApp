@@ -78,19 +78,17 @@ public sealed record DepartmentRowDto(
 /// </summary>
 /// <param name="Rows">Отделы в порядке места.</param>
 /// <param name="Range">Окно расчёта.</param>
-/// <param name="Caveats">Ограничения интерпретации.</param>
+
 public sealed record DepartmentAnalyticsDto(
     IReadOnlyList<DepartmentRowDto> Rows,
-    AnalyticsRangeDto Range,
-    IReadOnlyList<string> Caveats)
+    AnalyticsRangeDto Range)
 {
     /// <summary>Создаёт DTO из результата сервиса.</summary>
     /// <param name="result">Сравнение отделов.</param>
     /// <returns>DTO сравнения.</returns>
     public static DepartmentAnalyticsDto From(DepartmentAnalyticsResult result) => new(
         result.Rows.Select(DepartmentRowDto.From).ToList(),
-        AnalyticsRangeDto.Create(result.Range),
-        result.Caveats);
+        AnalyticsRangeDto.Create(result.Range));
 }
 
 /// <summary>
@@ -100,13 +98,12 @@ public sealed record DepartmentAnalyticsDto(
 /// <param name="Series">Ряд участников.</param>
 /// <param name="Formats">Сравнение форматов внутри отдела.</param>
 /// <param name="Range">Окно расчёта.</param>
-/// <param name="Caveats">Ограничения интерпретации.</param>
+
 public sealed record DepartmentDetailDto(
     DepartmentRowDto Row,
     SeriesDto Series,
     IReadOnlyList<ActivityFormatDto> Formats,
-    AnalyticsRangeDto Range,
-    IReadOnlyList<string> Caveats)
+    AnalyticsRangeDto Range)
 {
     /// <summary>Создаёт DTO из результата сервиса.</summary>
     /// <param name="detail">Детализация отдела.</param>
@@ -115,8 +112,7 @@ public sealed record DepartmentDetailDto(
         DepartmentRowDto.From(detail.Row),
         SeriesDto.From(detail.Series),
         detail.Formats.Select(ActivityFormatDto.From).ToList(),
-        AnalyticsRangeDto.Create(detail.Range),
-        detail.Caveats);
+        AnalyticsRangeDto.Create(detail.Range));
 }
 
 /// <summary>
@@ -184,7 +180,6 @@ public sealed record CrossDepartmentPointDto(
 /// <param name="TopPairs">Наиболее частые пары отделов.</param>
 /// <param name="Series">Ряд доли межотдельских благодарностей.</param>
 /// <param name="Range">Окно расчёта.</param>
-/// <param name="Caveats">Ограничения интерпретации.</param>
 public sealed record CollaborationThanksDto(
     long Total,
     long CrossDepartment,
@@ -192,8 +187,7 @@ public sealed record CollaborationThanksDto(
     double? PreviousCrossDepartmentShare,
     IReadOnlyList<DepartmentInteractionDto> TopPairs,
     IReadOnlyList<CrossDepartmentPointDto> Series,
-    AnalyticsRangeDto Range,
-    IReadOnlyList<string> Caveats)
+    AnalyticsRangeDto Range)
 {
     /// <summary>Создаёт DTO из результата сервиса.</summary>
     /// <param name="result">Результат взаимодействия.</param>
@@ -205,8 +199,7 @@ public sealed record CollaborationThanksDto(
         result.PreviousCrossDepartmentShare,
         result.TopPairs.Select(DepartmentInteractionDto.From).ToList(),
         result.Series.Select(CrossDepartmentPointDto.From).ToList(),
-        AnalyticsRangeDto.Create(result.Range),
-        result.Caveats);
+        AnalyticsRangeDto.Create(result.Range));
 }
 
 /// <summary>
@@ -298,18 +291,16 @@ public sealed record HealthCheckDto(
 /// </summary>
 /// <param name="Checks">Проверки в порядке важности.</param>
 /// <param name="AsOf">Момент расчёта.</param>
-/// <param name="Caveats">Ограничения интерпретации.</param>
+
 public sealed record AnalyticsHealthDto(
     IReadOnlyList<HealthCheckDto> Checks,
-    DateTime AsOf,
-    IReadOnlyList<string> Caveats)
+    DateTime AsOf)
 {
     /// <summary>Создаёт DTO из результата сервиса.</summary>
     /// <param name="health">Состояние данных.</param>
     /// <returns>DTO состояния.</returns>
     public static AnalyticsHealthDto From(AnalyticsHealth health) => new(
         health.Checks.Select(HealthCheckDto.From).ToList(),
-        health.AsOf,
-        health.Caveats);
+        health.AsOf);
 }
 

@@ -39,7 +39,7 @@ public sealed record ActivityFormatRow(
 /// <param name="Economy">Баллы и заказы.</param>
 /// <param name="Deltas">Изменения относительно предыдущего окна.</param>
 /// <param name="Formats">Сравнение форматов активности.</param>
-/// <param name="Caveats">Ограничения интерпретации.</param>
+
 public sealed record PlatformOverview(
     AnalyticsRange Range,
     IReadOnlyList<MetricValue> Headcount,
@@ -47,8 +47,7 @@ public sealed record PlatformOverview(
     IReadOnlyList<MetricValue> Volume,
     IReadOnlyList<MetricValue> Economy,
     IReadOnlyList<MetricDelta> Deltas,
-    IReadOnlyList<ActivityFormatRow> Formats,
-    IReadOnlyList<string> Caveats);
+    IReadOnlyList<ActivityFormatRow> Formats);
 
 /// <summary>
 /// Сервис обзора платформы.

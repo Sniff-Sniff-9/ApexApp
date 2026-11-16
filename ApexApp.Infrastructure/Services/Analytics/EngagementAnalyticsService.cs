@@ -159,19 +159,10 @@ public sealed class EngagementAnalyticsService(
             previousAverage = average;
         }
 
-        var caveats = new List<string>(range.Caveats)
-        {
-            "Вовлечённость рассчитывается действующей формулой платформы (окно 30 дней, взвешивание по свежести). " +
-            "Для исторических периодов формула применяется к данным на конец периода.",
-            "Сотрудники без активности учитываются с нулевым баллом: средний балл отражает вовлечённость всего штата, " +
-            "а не только активных сотрудников."
-        };
-
         return new EngagementTrendResult(
             points,
             EngagementScoring.WindowDays,
-            range,
-            caveats);
+            range);
     }
 
     private async Task<DecliningEmployeesResult> BuildDecliningAsync(
@@ -252,21 +243,13 @@ public sealed class EngagementAnalyticsService(
                     current.ByUser.GetValueOrDefault(candidate.UserId)?.LastActivityAt);
             })
             .ToList();
-
-        var caveats = new List<string>(range.Caveats)
-        {
-            "Снижение вовлечённости — наблюдение, а не оценка сотрудника: на балл влияют доступность активностей и сезонность.",
-            "Идентификатор сотрудника обезличен; имена доступны только ролям с правом просмотра персональной аналитики."
-        };
-
         return new DecliningEmployeesResult(
             employees,
             candidates.Count,
             Math.Max(headcount - participants, 0),
             headcount,
             _options.DecliningScoreThreshold,
-            range,
-            caveats);
+            range);
     }
 
     /// <summary>

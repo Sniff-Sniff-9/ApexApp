@@ -1028,6 +1028,7 @@ public sealed class QuestService(
     /// <inheritdoc />
     public async Task<ServiceResult<Quest>> CreateAsync(
         QuestCommand command,
+        IReadOnlyList<QuestStepCommand> steps,
         Guid createdBy,
         CancellationToken cancellationToken = default)
     {
@@ -1039,6 +1040,14 @@ public sealed class QuestService(
         if (createdBy == Guid.Empty)
         {
             return ServiceResult<Quest>.Fail(400, "A valid creator ID is required.");
+        }
+
+        // A quest without steps cannot be started or completed, so it is not a valid quest.
+        if (steps is null || steps.Count == 0)
+        {
+            return ServiceResult<Quest>.Fail(
+                400,
+                "A quest must have at least one step.");
         }
 
         var validationError = ValidateQuestFields(
@@ -1066,6 +1075,38 @@ public sealed class QuestService(
             CreatedAt = now,
             UpdatedAt = now
         };
+
+        for (var index = 0; index < steps.Count; index++)
+        {
+            var step = steps[index];
+
+            if (step is null)
+            {
+                return ServiceResult<Quest>.Fail(
+                    400,
+                    $"Step {index + 1} is required.");
+            }
+
+            var stepValidationError = ValidateStepFields(step, out var completionType);
+
+            if (stepValidationError is not null)
+            {
+                return ServiceResult<Quest>.Fail(
+                    400,
+                    $"Step {index + 1}: {stepValidationError}");
+            }
+
+            quest.QuestSteps.Add(new QuestStep
+            {
+                Title = step.Title!.Trim(),
+                Description = NormalizeOptional(step.Description),
+                CompletionType = completionType,
+                SortOrder = step.SortOrder,
+                IsRequired = step.IsRequired,
+                CompletionData = NormalizeOptional(step.CompletionData),
+                CreatedAt = now
+            });
+        }
 
         dbContext.Quests.Add(quest);
 
