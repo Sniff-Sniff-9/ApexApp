@@ -158,7 +158,20 @@ public partial class AppDbContext : DbContext
 
             entity.ToTable("cart_items");
 
-            entity.HasIndex(e => new { e.UserId, e.ProductId }, "cart_items_user_id_product_id_key").IsUnique();
+            // Одна строка корзины — это пара «товар + вариант». NULL-вариант является
+            // самостоятельным выбором, поэтому для него и для вариантов используются
+            // отдельные частичные уникальные индексы.
+            entity.HasIndex(
+                    e => new { e.UserId, e.ProductId },
+                    "cart_items_user_id_product_id_null_variant_key")
+                .IsUnique()
+                .HasFilter("(product_variant_id IS NULL)");
+
+            entity.HasIndex(
+                    e => new { e.UserId, e.ProductId, e.ProductVariantId },
+                    "cart_items_user_id_product_id_product_variant_id_key")
+                .IsUnique()
+                .HasFilter("(product_variant_id IS NOT NULL)");
 
             entity.HasIndex(e => e.UserId, "idx_cart_user");
 

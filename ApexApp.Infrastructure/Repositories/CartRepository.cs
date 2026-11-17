@@ -29,15 +29,27 @@ public sealed class CartRepository(
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
     }
 
-    public Task<CartItem?> GetByUserAndProductAsync(
+    public Task<CartItem?> GetByUserProductAndVariantAsync(
         Guid userId,
         int productId,
+        int? variantId,
         CancellationToken cancellationToken = default)
     {
-        return dbContext.Set<CartItem>()
-            .FirstOrDefaultAsync(
-                x => x.UserId == userId && x.ProductId == productId,
+        var query = dbContext.Set<CartItem>()
+            .Where(x => x.UserId == userId && x.ProductId == productId);
+
+        // Null — самостоятельный выбор варианта, поэтому ищем строку без варианта,
+        // а не любую строку этого товара.
+        if (variantId is not int id)
+        {
+            return query.FirstOrDefaultAsync(
+                x => x.ProductVariantId == null,
                 cancellationToken);
+        }
+
+        return query.FirstOrDefaultAsync(
+            x => x.ProductVariantId == id,
+            cancellationToken);
     }
 
     public async Task AddAsync(

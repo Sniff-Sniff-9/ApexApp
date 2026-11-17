@@ -47,17 +47,11 @@ public sealed class CartService(
         if (variantError is not null)
             return (false, variantError);
 
-        var item = await cartRepository.GetByUserAndProductAsync(
-            userId, productId, cancellationToken);
-
-        // Ограничение корзины допускает одну строку на товар, поэтому смена варианта
-        // должна выполняться через обновление строки, а не молчаливой перезаписью.
-        if (item is not null && item.ProductVariantId != variant?.Id)
-        {
-            return (false,
-                "The cart already contains this product with a different variant selection. " +
-                "Update or remove the existing item first.");
-        }
+        // Одна строка корзины соответствует паре «товар + вариант». Повторное
+        // добавление того же варианта увеличивает количество, другой вариант
+        // (включая NULL) создаёт отдельную строку.
+        var item = await cartRepository.GetByUserProductAndVariantAsync(
+            userId, productId, variant?.Id, cancellationToken);
 
         var newQuantity = (long)(item?.Quantity ?? 0) + quantity;
 

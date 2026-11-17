@@ -7,8 +7,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace ApexApp.Checks;
 
 /// <summary>
-/// End-to-end checks of the checkout flow against the real database: a purchase with a
-/// variant and a plain purchase without a variant.
+/// End-to-end checks of the checkout flow against the real database: a purchase with
+/// several variants of one product and a plain purchase without a variant.
 ///
 /// The checks write to the database, so they run only when the caller passes
 /// <c>--checkout-write</c>. They create dedicated products, perform real cart →
@@ -19,7 +19,7 @@ internal static class CheckoutChecks
 {
     public static async Task RunAsync(CheckRunner runner, ServiceProvider provider)
     {
-        await runner.CheckAsync("checkout.variant-price-stock-and-history", async () =>
+        await runner.CheckAsync("checkout.multi-variant-price-stock-and-history", async () =>
         {
             await using var scope = provider.CreateAsyncScope();
 
@@ -59,15 +59,24 @@ internal static class CheckoutChecks
         var startedAt = DateTime.UtcNow;
 
         // Пользователь с уже оплаченным заказом: это исключает выдачу достижения
-        // за первый заказ во время проверки.
-        var userId = await dbContext.Orders
-            .Where(order => order.Status == OrderStatus.Paid)
-            .Select(order => order.UserId)
+        // за первый заказ во время проверки. Корзина должна быть пустой, иначе
+        // checkout захватит чужие строки, а баланса должно хватить на три строки.
+        // 135 = 3*25 + 1*40 + 2*10 — сумма, которую сценарий ниже оплатит.
+        var userId = await dbContext.Balances
+            .Where(balance =>
+                balance.Type == BalanceType.Personal
+                && balance.Amount >= 135
+                && dbContext.Orders.Any(order =>
+                    order.UserId == balance.UserId
+                    && order.Status == OrderStatus.Paid)
+                && !dbContext.CartItems.Any(item => item.UserId == balance.UserId))
+            .OrderByDescending(balance => balance.Amount)
+            .Select(balance => balance.UserId)
             .FirstOrDefaultAsync();
 
         CheckRunner.Ensure(
             userId != Guid.Empty,
-            "no user with a paid order is available for the checkout check");
+            "no user with a paid order, an empty cart, and at least 135 points is available for the checkout check");
 
         var balance = await dbContext.Balances
             .AsNoTracking()
@@ -160,52 +169,140 @@ internal static class CheckoutChecks
         dbContext.ProductVariants.AddRange(variant, otherVariant);
         await dbContext.SaveChangesAsync();
 
+        // Повторное добавление того же варианта должно увеличить существующую строку.
         var added = await cartService.AddAsync(userId, product.Id, variant.Id, 2);
         CheckRunner.Ensure(added.Success, added.Error ?? "add to cart failed");
 
+        var repeated = await cartService.AddAsync(userId, product.Id, variant.Id, 1);
+        CheckRunner.Ensure(repeated.Success, repeated.Error ?? "repeat add to cart failed");
+
+        // Другой вариант должен создать отдельную строку.
         var secondVariant = await cartService.AddAsync(userId, product.Id, otherVariant.Id, 1);
-        CheckRunner.Ensure(
-            !secondVariant.Success,
-            "a second variant of the same product must be rejected while the cart is unique per product");
+        CheckRunner.Ensure(secondVariant.Success, secondVariant.Error ?? "second variant add failed");
+
+        // NULL-вариант — самостоятельный выбор, который тоже схлопывается при повторе.
+        var plain = await cartService.AddAsync(userId, product.Id, null, 1);
+        CheckRunner.Ensure(plain.Success, plain.Error ?? "plain add failed");
+
+        var plainRepeated = await cartService.AddAsync(userId, product.Id, null, 1);
+        CheckRunner.Ensure(plainRepeated.Success, plainRepeated.Error ?? "plain repeat add failed");
 
         var unknownVariant = await cartService.AddAsync(userId, product.Id, 999_999, 1);
         CheckRunner.Ensure(!unknownVariant.Success, "an unknown variant must be rejected");
+
+        var cart = await cartService.GetAsync(userId);
+        var productRows = cart.Where(item => item.ProductId == product.Id).ToList();
+
+        CheckRunner.Ensure(
+            productRows.Count == 3,
+            $"three cart rows expected for two variants plus the plain item, got {productRows.Count}");
+
+        var variantRow = productRows.Single(item => item.ProductVariantId == variant.Id);
+        var otherVariantRow = productRows.Single(item => item.ProductVariantId == otherVariant.Id);
+        var plainRow = productRows.Single(item => item.ProductVariantId is null);
+
+        CheckRunner.Ensure(
+            variantRow.Quantity == 3,
+            $"the repeated variant quantity must be 3, got {variantRow.Quantity}");
+        CheckRunner.Ensure(
+            otherVariantRow.Quantity == 1,
+            $"the other variant quantity must be 1, got {otherVariantRow.Quantity}");
+        CheckRunner.Ensure(
+            plainRow.Quantity == 2,
+            $"the repeated plain quantity must be 2, got {plainRow.Quantity}");
+
+        // Обновление количества одной строки не должно менять остальные варианты.
+        var updated = await cartService.UpdateAsync(userId, otherVariantRow.Id, null, 2);
+        CheckRunner.Ensure(updated.Success, updated.Error ?? "quantity update failed");
+
+        var afterUpdate = await cartService.GetAsync(userId);
+
+        CheckRunner.Ensure(
+            afterUpdate.Single(item => item.Id == variantRow.Id).Quantity == 3,
+            "updating another variant must not change the first variant row");
+        CheckRunner.Ensure(
+            afterUpdate.Single(item => item.Id == otherVariantRow.Id).Quantity == 2,
+            "the updated variant row must have quantity 2");
+        CheckRunner.Ensure(
+            afterUpdate.Single(item => item.Id == plainRow.Id).Quantity == 2,
+            "updating a variant must not change the plain row");
+
+        // Удаление одной строки не должно затрагивать остальные варианты.
+        var removed = await cartService.RemoveAsync(userId, otherVariantRow.Id);
+        CheckRunner.Ensure(removed.Success, removed.Error ?? "remove failed");
+
+        var afterRemove = await cartService.GetAsync(userId);
+        var remainingRows = afterRemove.Where(item => item.ProductId == product.Id).ToList();
+
+        CheckRunner.Ensure(
+            remainingRows.Count == 2,
+            $"two cart rows must remain after removing one variant, got {remainingRows.Count}");
+        CheckRunner.Ensure(
+            remainingRows.All(item => item.Id != otherVariantRow.Id),
+            "the removed variant row must be gone");
+        CheckRunner.Ensure(
+            remainingRows.Any(item => item.Id == variantRow.Id)
+            && remainingRows.Any(item => item.Id == plainRow.Id),
+            "removing one variant must keep the other variant and the plain row");
+
+        // Возвращаем удалённый вариант, чтобы checkout обработал все три строки.
+        var reAdded = await cartService.AddAsync(userId, product.Id, otherVariant.Id, 1);
+        CheckRunner.Ensure(reAdded.Success, reAdded.Error ?? "re-adding the variant failed");
 
         var checkout = await orderService.CheckoutAsync(userId);
         CheckRunner.Ensure(checkout.Success, checkout.Error ?? "checkout failed");
 
         var order = checkout.Data!;
-        var item = order.OrderItems.Single();
 
         CheckRunner.Ensure(
-            item.ProductVariantId == variant.Id,
-            $"variant id must be copied to the order item, got {item.ProductVariantId}");
+            order.OrderItems.Count == 3,
+            $"three order items expected, got {order.OrderItems.Count}");
+
+        var variantItem = order.OrderItems.Single(item => item.ProductVariantId == variant.Id);
+        var otherVariantItem = order.OrderItems.Single(item => item.ProductVariantId == otherVariant.Id);
+        var plainItem = order.OrderItems.Single(item => item.ProductVariantId is null);
+
         CheckRunner.Ensure(
-            item.PriceAtPurchase == 25,
-            $"the variant price must be used, got {item.PriceAtPurchase}");
+            variantItem.Quantity == 3 && variantItem.PriceAtPurchase == 25,
+            "the first variant must keep quantity 3 and its own price");
         CheckRunner.Ensure(
-            order.TotalAmount == 50,
-            $"order total must be 50 points, got {order.TotalAmount}");
+            otherVariantItem.Quantity == 1 && otherVariantItem.PriceAtPurchase == 40,
+            "the second variant must keep quantity 1 and its own price");
+        CheckRunner.Ensure(
+            plainItem.Quantity == 2 && plainItem.PriceAtPurchase == 10,
+            "the plain row must keep quantity 2 and the product price");
+        CheckRunner.Ensure(
+            order.TotalAmount == 135,
+            $"order total must be 3*25 + 1*40 + 2*10 = 135 points, got {order.TotalAmount}");
 
         var history = await orderService.GetHistoryAsync(userId);
-        var historyItem = history.Single(entry => entry.Id == order.Id).OrderItems.Single();
+        var historyOrder = history.Single(entry => entry.Id == order.Id);
+        var historyVariantItem = historyOrder.OrderItems
+            .Single(item => item.ProductVariantId == variant.Id);
+
         CheckRunner.Ensure(
-            historyItem.ProductVariant?.Name == "Вариант A",
+            historyVariantItem.ProductVariant?.Name == "Вариант A",
             "the order history must expose the variant");
 
         var variantAfterCheckout = await dbContext.ProductVariants
             .AsNoTracking()
             .SingleAsync(entry => entry.Id == variant.Id);
+        var otherVariantAfterCheckout = await dbContext.ProductVariants
+            .AsNoTracking()
+            .SingleAsync(entry => entry.Id == otherVariant.Id);
         var productAfterCheckout = await dbContext.Products
             .AsNoTracking()
             .SingleAsync(entry => entry.Id == product.Id);
 
         CheckRunner.Ensure(
-            variantAfterCheckout.Stock == 3,
-            $"variant stock must be 3 after buying 2, got {variantAfterCheckout.Stock}");
+            variantAfterCheckout.Stock == 2,
+            $"the first variant stock must be 2 after buying 3, got {variantAfterCheckout.Stock}");
         CheckRunner.Ensure(
-            productAfterCheckout.Stock == 50,
-            "product stock must not change for variant lines");
+            otherVariantAfterCheckout.Stock == 4,
+            $"the second variant stock must be 4 after buying 1, got {otherVariantAfterCheckout.Stock}");
+        CheckRunner.Ensure(
+            productAfterCheckout.Stock == 48,
+            $"product stock must be 48 after buying 2 plain units, got {productAfterCheckout.Stock}");
 
         var cancelled = await orderService.CancelAsync(order.Id, userId);
         CheckRunner.Ensure(cancelled.Success, cancelled.Error ?? "cancel failed");
@@ -213,10 +310,22 @@ internal static class CheckoutChecks
         var variantAfterCancel = await dbContext.ProductVariants
             .AsNoTracking()
             .SingleAsync(entry => entry.Id == variant.Id);
+        var otherVariantAfterCancel = await dbContext.ProductVariants
+            .AsNoTracking()
+            .SingleAsync(entry => entry.Id == otherVariant.Id);
+        var productAfterCancel = await dbContext.Products
+            .AsNoTracking()
+            .SingleAsync(entry => entry.Id == product.Id);
 
         CheckRunner.Ensure(
             variantAfterCancel.Stock == 5,
-            $"variant stock must be restored to 5, got {variantAfterCancel.Stock}");
+            $"the first variant stock must be restored to 5, got {variantAfterCancel.Stock}");
+        CheckRunner.Ensure(
+            otherVariantAfterCancel.Stock == 5,
+            $"the second variant stock must be restored to 5, got {otherVariantAfterCancel.Stock}");
+        CheckRunner.Ensure(
+            productAfterCancel.Stock == 50,
+            $"product stock must be restored to 50, got {productAfterCancel.Stock}");
     }
 
     private static async Task RunPlainScenarioAsync(
