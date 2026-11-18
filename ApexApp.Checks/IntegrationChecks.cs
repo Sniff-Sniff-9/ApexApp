@@ -4,6 +4,7 @@ using ApexApp.Infrastructure.Data;
 using ApexApp.Infrastructure.Repositories;
 using ApexApp.Infrastructure.Services;
 using ApexApp.Infrastructure.Services.Analytics;
+using ApexApp.Infrastructure.Services.Quests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -70,6 +71,18 @@ internal static class IntegrationChecks
         services.AddScoped<IAchievementService, AchievementService>();
         services.AddScoped<IOrderService, OrderService>();
 
+        // Автоматические шаги квестов: проверяются на реальных записях БД.
+        services.AddScoped<IBalanceRepository, BalanceRepository>();
+        services.AddScoped<ITransactionRepository, TransactionRepository>();
+        services.AddScoped<ActivityRewardGranter>();
+        services.AddScoped<IActivityRewardService, ActivityRewardService>();
+        services.AddScoped<IQuestStepActionOptionProvider, QuestStepActionOptionProvider>();
+        services.AddScoped<IQuestStepVerifier, QuestStepVerifier>();
+        services.AddScoped<IQuestProgressService, QuestProgressService>();
+        services.AddScoped<IEngagementService, EngagementService>();
+        services.AddScoped<IEngagementLevelNotifier, EngagementLevelNotifier>();
+        services.AddScoped<IQuestService, QuestService>();
+
         var provider = services.BuildServiceProvider();
 
         // Fail fast with a clear message when the database is not reachable.
@@ -117,7 +130,6 @@ internal static class IntegrationChecks
             CheckRunner.Ensure(overview.Range.From < overview.Range.To, "range must be ordered");
             CheckRunner.Ensure(overview.Headcount.Count >= 4, "headcount metrics expected");
             CheckRunner.Ensure(overview.Deltas.Count >= 5, "deltas expected");
-            CheckRunner.Ensure(overview.Caveats.Count > 0, "caveats must be present");
 
             var participants = overview.Participation.First(metric => metric.Code == "participants");
             var rate = overview.Participation.First(metric => metric.Code == "participation_rate");
@@ -294,9 +306,6 @@ internal static class IntegrationChecks
             CheckRunner.Ensure(
                 result.Value.Items.All(row => row.VariantId > 0 && row.Stock >= 0 && row.Units >= 0),
                 "variant rows must be well-formed");
-            CheckRunner.Ensure(
-                result.Value.Caveats.Count > 0,
-                "variant caveats expected");
         });
 
         await runner.CheckAsync("cart-and-order-variant-reads", async () =>
@@ -435,7 +444,6 @@ internal static class IntegrationChecks
 
             CheckRunner.Ensure(result.IsSuccess, $"health failed: {result.Error}");
             CheckRunner.Ensure(result.Value!.Checks.Count > 0, "checks expected");
-            CheckRunner.Ensure(result.Value.Caveats.Count > 0, "caveats expected");
         });
     }
 }

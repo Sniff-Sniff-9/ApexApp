@@ -26,11 +26,13 @@ public sealed record AiQuestDraftRequest(
 /// <param name="QuestDescription">Описание квеста; необязательно.</param>
 /// <param name="StepsCount">Количество шагов, 1–8.</param>
 /// <param name="ProofHint">Подсказка о доказательствах; необязательно.</param>
+/// <param name="AllowAutomatic">Разрешить предлагать автоматические шаги.</param>
 public sealed record AiQuestStepRequest(
     string QuestTitle,
     string? QuestDescription = null,
     int StepsCount = 4,
-    string? ProofHint = null);
+    string? ProofHint = null,
+    bool AllowAutomatic = true);
 
 /// <summary>
 /// Параметры генерации анонса корпоративного мероприятия.
@@ -136,11 +138,22 @@ public sealed record QuestDraft(string Name, string Description);
 /// <param name="Description">Описание шага.</param>
 /// <param name="CompletionType">Тип выполнения: <c>manual</c>, <c>proof</c> или <c>automatic</c>.</param>
 /// <param name="IsRequired">Признак обязательного шага.</param>
+/// <param name="ActionType">Код автоматического действия или <c>null</c>.</param>
+/// <param name="TargetId">Идентификатор выбранного объекта из списка Backend-а.</param>
+/// <param name="AchievementCode">Код достижения из списка Backend-а.</param>
+/// <param name="NeedsConfiguration">
+/// Признак того, что модель предложила автоматический шаг, но объект не выбран:
+/// администратор должен заполнить параметр.
+/// </param>
 public sealed record QuestStepDraft(
     string Title,
     string Description,
     string CompletionType,
-    bool IsRequired);
+    bool IsRequired,
+    string? ActionType = null,
+    long? TargetId = null,
+    string? AchievementCode = null,
+    bool NeedsConfiguration = false);
 
 /// <summary>Черновик анонса мероприятия.</summary>
 /// <param name="Title">Заголовок.</param>

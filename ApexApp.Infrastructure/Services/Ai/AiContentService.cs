@@ -1,5 +1,6 @@
 using System.Collections;
 using ApexApp.Infrastructure.Common;
+using ApexApp.Infrastructure.Services.Quests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -12,6 +13,7 @@ namespace ApexApp.Infrastructure.Services.Ai;
 /// </summary>
 public sealed class AiContentService(
     AiCompletionExecutor executor,
+    IQuestStepActionOptionProvider optionProvider,
     IOptions<DeepSeekOptions> options,
     ILogger<AiContentService> logger) : IAiContentService
 {
@@ -66,7 +68,17 @@ public sealed class AiContentService(
         }
 
         var steps = Math.Clamp(request.StepsCount, 1, AiContentValidator.MaxSteps);
-        var prompt = AiPromptBuilder.QuestSteps(request with { StepsCount = steps });
+
+        // Список объектов загружает только Backend: модель не может придумать ID,
+        // а клиент не может подменить допустимый набор.
+        var candidates = request.AllowAutomatic
+            ? await optionProvider.GetCandidateSetsAsync(cancellationToken)
+            : null;
+
+        var prompt = AiPromptBuilder.QuestSteps(
+            request with { StepsCount = steps },
+            candidates,
+            request.AllowAutomatic);
 
         var completion = await executor.ExecuteAsync(
             "quest-steps",
@@ -87,7 +99,11 @@ public sealed class AiContentService(
             "quest-steps",
             adminId,
             completion.Value!,
-            payload => AiContentValidator.QuestSteps(payload.Steps, steps));
+            payload => AiContentValidator.QuestSteps(
+                payload.Steps,
+                steps,
+                candidates,
+                request.AllowAutomatic));
     }
 
     /// <inheritdoc />

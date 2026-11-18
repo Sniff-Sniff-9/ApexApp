@@ -56,13 +56,15 @@ namespace ApexApp.Api.DTOs
     /// <param name="SortOrder">Порядок отображения; по умолчанию 0.</param>
     /// <param name="IsRequired">Признак обязательного шага; по умолчанию <c>true</c>.</param>
     /// <param name="CompletionData">Дополнительные данные шага в формате JSON.</param>
+    /// <param name="Action">Типизированные параметры автоматического шага.</param>
     public sealed record CreateQuestStepRequest(
         string? Title,
         string? Description,
         string? CompletionType,
         int? SortOrder,
         bool? IsRequired,
-        string? CompletionData);
+        string? CompletionData,
+        QuestStepActionRequest? Action = null);
 
     /// <summary>
     /// Запрос на обновление шага квеста.
@@ -73,13 +75,34 @@ namespace ApexApp.Api.DTOs
     /// <param name="SortOrder">Порядок отображения; по умолчанию 0.</param>
     /// <param name="IsRequired">Признак обязательного шага; по умолчанию <c>true</c>.</param>
     /// <param name="CompletionData">Дополнительные данные шага в формате JSON.</param>
+    /// <param name="Action">Типизированные параметры автоматического шага.</param>
     public sealed record UpdateQuestStepRequest(
         string? Title,
         string? Description,
         string? CompletionType,
         int? SortOrder,
         bool? IsRequired,
-        string? CompletionData);
+        string? CompletionData,
+        QuestStepActionRequest? Action = null);
+
+    /// <summary>
+    /// Параметры автоматического действия, выбранные администратором в форме.
+    /// </summary>
+    /// <param name="Type">Код действия из каталога шаблонов.</param>
+    /// <param name="TargetId">Идентификатор выбранного объекта.</param>
+    /// <param name="AchievementCode">Код достижения.</param>
+    /// <param name="ProductId">Товар для покупки.</param>
+    /// <param name="MinAmount">Минимальная сумма заказа.</param>
+    /// <param name="Count">Требуемое количество действий.</param>
+    /// <param name="RequireAvatar">Требование аватара.</param>
+    public sealed record QuestStepActionRequest(
+        string? Type,
+        long? TargetId = null,
+        string? AchievementCode = null,
+        long? ProductId = null,
+        long? MinAmount = null,
+        int? Count = null,
+        bool? RequireAvatar = null);
 
     /// <summary>
     /// Запрос на проверку доказательства.

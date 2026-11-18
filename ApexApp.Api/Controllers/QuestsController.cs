@@ -5,6 +5,7 @@ using ApexApp.Api.Extensions;
 using ApexApp.Domain.Entities;
 using ApexApp.Infrastructure.Common;
 using ApexApp.Infrastructure.Services;
+using ApexApp.Infrastructure.Services.Quests;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
@@ -641,7 +642,8 @@ public sealed class QuestsController(IQuestService questService) : ApiController
                 request.CompletionType,
                 request.SortOrder,
                 request.IsRequired,
-                request.CompletionData),
+                request.CompletionData,
+                request.Action),
             cancellationToken);
 
         if (!result.IsSuccess)
@@ -694,7 +696,8 @@ public sealed class QuestsController(IQuestService questService) : ApiController
                 request.CompletionType,
                 request.SortOrder,
                 request.IsRequired,
-                request.CompletionData),
+                request.CompletionData,
+                request.Action),
             cancellationToken);
 
         if (!result.IsSuccess)
@@ -739,6 +742,94 @@ public sealed class QuestsController(IQuestService questService) : ApiController
         }
 
         return NoContent();
+    }
+
+    /// <summary>
+    /// Получить каталог шаблонов автоматических шагов.
+    /// </summary>
+    /// <remarks>
+    /// Каталог содержит понятные названия, описания и параметры шаблонов; администратор
+    /// выбирает шаблон и объект, а не редактирует JSON.
+    /// </remarks>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    /// <response code="200">Каталог шаблонов получен.</response>
+    /// <response code="401">Пользователь не авторизован.</response>
+    /// <response code="403">Недостаточно прав.</response>
+    [HttpGet("step-actions")]
+    [Authorize(Policy = AppPolicies.ManageActivities)]
+    [ProducesResponseType(typeof(IReadOnlyList<QuestStepActionTemplateDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<IReadOnlyList<QuestStepActionTemplateDto>>> GetStepActions(
+        CancellationToken cancellationToken)
+    {
+        var templates = await questService.GetStepActionsAsync(cancellationToken);
+
+        return Ok(templates.Select(ToDto).ToList());
+    }
+
+    /// <summary>
+    /// Получить варианты выбора объекта для шаблона автоматического шага.
+    /// </summary>
+    /// <param name="code">Код шаблона.</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    /// <response code="200">Шаблон и варианты выбора получены.</response>
+    /// <response code="401">Пользователь не авторизован.</response>
+    /// <response code="403">Недостаточно прав.</response>
+    /// <response code="404">Шаблон не найден.</response>
+    [HttpGet("step-actions/{code}/options")]
+    [Authorize(Policy = AppPolicies.ManageActivities)]
+    [ProducesResponseType(typeof(QuestStepActionOptionsDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<QuestStepActionOptionsDto>> GetStepActionOptions(
+        string code,
+        CancellationToken cancellationToken)
+    {
+        var result = await questService.GetStepActionOptionsAsync(code, cancellationToken);
+
+        if (!result.IsSuccess)
+        {
+            return ToErrorResult(result.StatusCode, result.Error);
+        }
+
+        var value = result.Value!;
+
+        return Ok(new QuestStepActionOptionsDto(
+            ToDto(value.Template),
+            value.Options.Select(ToDto).ToList()));
+    }
+
+    /// <summary>
+    /// Получить шаги квеста в административном представлении.
+    /// </summary>
+    /// <param name="questId">Идентификатор квеста.</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    /// <response code="200">Шаги получены.</response>
+    /// <response code="401">Пользователь не авторизован.</response>
+    /// <response code="403">Недостаточно прав.</response>
+    /// <response code="404">Квест не найден.</response>
+    [HttpGet("{questId:long}/steps")]
+    [Authorize(Policy = AppPolicies.ManageActivities)]
+    [ProducesResponseType(typeof(IReadOnlyList<AdminQuestStepDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<IReadOnlyList<AdminQuestStepDto>>> GetSteps(
+        long questId,
+        CancellationToken cancellationToken)
+    {
+        var result = await questService.GetStepsForAdministrationAsync(
+            questId,
+            cancellationToken);
+
+        if (!result.IsSuccess)
+        {
+            return ToErrorResult(result.StatusCode, result.Error);
+        }
+
+        return Ok(result.Value!.Select(ToAdminStepDto).ToList());
     }
 
     /// <summary>
@@ -924,12 +1015,11 @@ public sealed class QuestsController(IQuestService questService) : ApiController
     {
         var proof = state.LatestProof;
 
-        var isCompleted = state.Step.CompletionType switch
-        {
-            QuestStepCompletionType.Manual => state.Completion is not null,
-            QuestStepCompletionType.Proof => proof?.Status == QuestProofStatuses.Approved,
-            _ => false
-        };
+        IReadOnlyList<QuestStepCompletion> completions = state.Completion is null
+            ? Array.Empty<QuestStepCompletion>()
+            : new[] { state.Completion! };
+
+        var isCompleted = QuestStepSatisfaction.IsSatisfied(state.Step, completions);
 
         return new QuestStepDto(
             state.Step.Id,
@@ -1006,8 +1096,63 @@ public sealed class QuestsController(IQuestService questService) : ApiController
             quest.CreatedAt,
             quest.UpdatedAt);
 
-    private static AdminQuestStepDto ToAdminStepDto(QuestStep step) =>
+    private static QuestStepActionTemplateDto ToDto(QuestStepActionTemplate template) =>
         new(
+            template.Code,
+            template.Name,
+            template.Description,
+            template.IsAvailable,
+            template.UnavailableReason,
+            template.Parameters.Select(ToDto).ToList());
+
+    private static QuestStepActionParameterDto ToDto(QuestStepActionParameter parameter) =>
+        new(
+            parameter.Name,
+            parameter.Label,
+            parameter.Kind,
+            parameter.OptionsSource,
+            parameter.Required,
+            parameter.HelpText);
+
+    private static QuestStepActionOptionDto ToDto(QuestStepActionOption option) =>
+        new(
+            option.Id,
+            option.Title,
+            option.Subtitle,
+            option.IsActive);
+
+    private static AdminQuestStepDto ToAdminStepDto(QuestStep step)
+    {
+        QuestStepActionDto? action = null;
+        string? configurationError = null;
+
+        if (step.CompletionType == QuestStepCompletionType.Automatic)
+        {
+            if (QuestStepActionConfiguration.TryParse(
+                    step.CompletionData,
+                    out var configuration,
+                    out var error)
+                && configuration is not null
+                && QuestStepActionRegistry.Find(configuration.Type) is { } template)
+            {
+                action = new QuestStepActionDto(
+                    configuration.Type,
+                    template.Name,
+                    template.Description,
+                    configuration.TargetId,
+                    configuration.AchievementCode,
+                    configuration.ProductId,
+                    configuration.MinAmount,
+                    configuration.Count,
+                    configuration.RequireAvatar);
+            }
+            else
+            {
+                configurationError = error ?? "Automatic step configuration is invalid.";
+            }
+        }
+
+        return new AdminQuestStepDto(
             step.Id,
             step.QuestId,
             step.Title,
@@ -1016,7 +1161,10 @@ public sealed class QuestsController(IQuestService questService) : ApiController
             step.SortOrder,
             step.IsRequired,
             step.CompletionData,
-            step.CreatedAt);
+            step.CreatedAt,
+            action,
+            configurationError);
+    }
 
     private static QuestProofDto ToDto(QuestProofView view) =>
         new(
@@ -1077,8 +1225,25 @@ public sealed class QuestsController(IQuestService questService) : ApiController
         string? completionType,
         int? sortOrder,
         bool? isRequired,
-        string? completionData) =>
-        new(title, description, completionType, sortOrder ?? 0, isRequired ?? true, completionData);
+        string? completionData,
+        QuestStepActionRequest? action = null) =>
+        new(
+            title,
+            description,
+            completionType,
+            sortOrder ?? 0,
+            isRequired ?? true,
+            completionData,
+            action is null
+                ? null
+                : new QuestStepActionCommand(
+                    action.Type,
+                    action.TargetId,
+                    action.AchievementCode,
+                    action.ProductId,
+                    action.MinAmount,
+                    action.Count,
+                    action.RequireAvatar));
 
     private static IReadOnlyList<QuestStepCommand> ToStepCommands(
         IReadOnlyList<CreateQuestStepRequest>? steps) =>
@@ -1093,7 +1258,8 @@ public sealed class QuestsController(IQuestService questService) : ApiController
                         step.CompletionType,
                         step.SortOrder,
                         step.IsRequired,
-                        step.CompletionData))
+                        step.CompletionData,
+                        step.Action))
                 .ToList();
 
     private static string? ValidatePaging(int page, int pageSize) =>

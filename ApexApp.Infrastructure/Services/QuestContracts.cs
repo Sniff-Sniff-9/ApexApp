@@ -1,4 +1,5 @@
 using ApexApp.Domain.Entities;
+using ApexApp.Infrastructure.Services.Quests;
 
 namespace ApexApp.Infrastructure.Services;
 
@@ -245,6 +246,26 @@ public sealed record QuestCommand(
     bool IsActive);
 
 /// <summary>
+/// Типизированные параметры автоматического шага. Администратор выбирает шаблон
+/// и объект в форме, а сервер сам формирует JSON-конфигурацию.
+/// </summary>
+/// <param name="Type">Код действия из <see cref="Quests.QuestStepActionCodes"/>.</param>
+/// <param name="TargetId">Идентификатор выбранного объекта.</param>
+/// <param name="AchievementCode">Код достижения для <c>earn_achievement</c>.</param>
+/// <param name="ProductId">Товар для <c>make_purchase</c>.</param>
+/// <param name="MinAmount">Минимальная сумма заказа для <c>make_purchase</c>.</param>
+/// <param name="Count">Требуемое количество действий.</param>
+/// <param name="RequireAvatar">Требование аватара для <c>complete_profile</c>.</param>
+public sealed record QuestStepActionCommand(
+    string? Type,
+    long? TargetId = null,
+    string? AchievementCode = null,
+    long? ProductId = null,
+    long? MinAmount = null,
+    int? Count = null,
+    bool? RequireAvatar = null);
+
+/// <summary>
 /// Данные для создания или обновления шага квеста.
 /// </summary>
 /// <param name="Title">Название шага (обязательно, до 200 символов).</param>
@@ -252,17 +273,31 @@ public sealed record QuestCommand(
 /// <param name="CompletionType">Тип шага: <c>manual</c>, <c>proof</c> или <c>automatic</c>.</param>
 /// <param name="SortOrder">Порядок отображения (не может быть отрицательным).</param>
 /// <param name="IsRequired">Признак обязательного шага.</param>
-/// <param name="CompletionData">Дополнительные данные шага в формате JSON.</param>
+/// <param name="CompletionData">
+/// Дополнительные данные шага в формате JSON. Для автоматических шагов это устаревший
+/// способ: предпочтителен <paramref name="Action"/>.
+/// </param>
+/// <param name="Action">Типизированные параметры автоматического шага.</param>
 public sealed record QuestStepCommand(
     string? Title,
     string? Description,
     string? CompletionType,
     int SortOrder,
     bool IsRequired,
-    string? CompletionData);
+    string? CompletionData,
+    QuestStepActionCommand? Action = null);
 
 /// <summary>
 /// Команда проверки доказательства.
 /// </summary>
 /// <param name="Status">Новый статус: <c>approved</c> или <c>rejected</c>.</param>
 public sealed record ReviewQuestProofCommand(string? Status);
+
+/// <summary>
+/// Шаблон автоматического действия вместе с вариантами выбора его объектов.
+/// </summary>
+/// <param name="Template">Описание шаблона.</param>
+/// <param name="Options">Реальные объекты для параметра-ссылки.</param>
+public sealed record QuestStepActionOptionsResult(
+    QuestStepActionTemplate Template,
+    IReadOnlyList<QuestStepActionOption> Options);

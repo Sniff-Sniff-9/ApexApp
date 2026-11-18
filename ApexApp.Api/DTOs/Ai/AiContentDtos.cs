@@ -18,17 +18,35 @@ public sealed record QuestDraftDto(string Name, string Description)
 /// <param name="Description">Описание шага.</param>
 /// <param name="CompletionType">Тип выполнения: <c>manual</c>, <c>proof</c> или <c>automatic</c>.</param>
 /// <param name="IsRequired">Признак обязательного шага.</param>
+/// <param name="ActionType">Код автоматического действия или <c>null</c>.</param>
+/// <param name="TargetId">Идентификатор выбранного объекта.</param>
+/// <param name="AchievementCode">Код достижения.</param>
+/// <param name="NeedsConfiguration">
+/// Признак того, что для автоматического шага нужно выбрать объект вручную.
+/// </param>
 public sealed record QuestStepDraftDto(
     string Title,
     string Description,
     string CompletionType,
-    bool IsRequired)
+    bool IsRequired,
+    string? ActionType = null,
+    long? TargetId = null,
+    string? AchievementCode = null,
+    bool NeedsConfiguration = false)
 {
     /// <summary>Создаёт DTO из черновика шага.</summary>
     /// <param name="draft">Черновик шага.</param>
     /// <returns>DTO черновика.</returns>
     public static QuestStepDraftDto From(QuestStepDraft draft) =>
-        new(draft.Title, draft.Description, draft.CompletionType, draft.IsRequired);
+        new(
+            draft.Title,
+            draft.Description,
+            draft.CompletionType,
+            draft.IsRequired,
+            draft.ActionType,
+            draft.TargetId,
+            draft.AchievementCode,
+            draft.NeedsConfiguration);
 }
 
 /// <summary>Черновик анкеты.</summary>

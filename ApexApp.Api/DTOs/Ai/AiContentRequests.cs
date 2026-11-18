@@ -24,11 +24,13 @@ public sealed record GenerateQuestDraftRequest(
 /// <param name="QuestDescription">Описание квеста; необязательно.</param>
 /// <param name="StepsCount">Количество шагов, 1–8.</param>
 /// <param name="ProofHint">Подсказка о доказательствах; необязательно.</param>
+/// <param name="AllowAutomatic">Разрешить предлагать автоматические шаги.</param>
 public sealed record GenerateQuestStepsRequest(
     string QuestTitle,
     string? QuestDescription = null,
     int StepsCount = 4,
-    string? ProofHint = null);
+    string? ProofHint = null,
+    bool AllowAutomatic = true);
 
 /// <summary>
 /// Запрос генерации названия и описания анкеты.

@@ -12,6 +12,7 @@ using ApexApp.Infrastructure.Data;
 using ApexApp.Infrastructure.Repositories;
 using ApexApp.Infrastructure.Services;
 using ApexApp.Infrastructure.Services.Ai;
+using ApexApp.Infrastructure.Services.Quests;
 using ApexApp.Infrastructure.Services.Analytics;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -105,6 +106,9 @@ builder.Services.AddScoped<ILeaderboardService, LeaderboardService>();
 builder.Services.AddScoped<IEngagementService, EngagementService>();
 builder.Services.AddScoped<ActivityRewardGranter>();
 builder.Services.AddScoped<IActivityRewardService, ActivityRewardService>();
+builder.Services.AddScoped<IQuestStepActionOptionProvider, QuestStepActionOptionProvider>();
+builder.Services.AddScoped<IQuestStepVerifier, QuestStepVerifier>();
+builder.Services.AddScoped<IQuestProgressService, QuestProgressService>();
 builder.Services.AddScoped<IQuestService, QuestService>();
 builder.Services.AddScoped<IEventService, EventService>();
 builder.Services.AddScoped<ISurveyService, SurveyService>();
@@ -226,14 +230,13 @@ builder.Services.AddSwaggerGen(options =>
 
 var supabaseUrl = builder.Configuration["Supabase:ProjectUrl"] ??
     throw new InvalidOperationException("Supabase project URL is not configured.");
+var supabaseJwtJwks = builder.Configuration["Supabase:JwtJwks"];
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        options.Authority = $"{supabaseUrl}/auth/v1";
         options.Audience = "authenticated";
         options.MapInboundClaims = false;
-
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
@@ -242,8 +245,17 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidAudience = "authenticated",
             ValidateLifetime = true,
             NameClaimType = "sub",
-            RoleClaimType = "user_role"
+            RoleClaimType = "user_role",
+            IssuerSigningKeys = string.IsNullOrWhiteSpace(supabaseJwtJwks)
+                ? null
+                : new JsonWebKeySet(supabaseJwtJwks).GetSigningKeys()
         };
+        if (string.IsNullOrWhiteSpace(supabaseJwtJwks))
+        {
+            options.Authority = $"{supabaseUrl}/auth/v1";
+            // The IP-based test deployment is HTTP-only; require HTTPS metadata when configured for HTTPS.
+            options.RequireHttpsMetadata = !supabaseUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase);
+        }
     });
 
 builder.Services.AddHttpClient();

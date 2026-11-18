@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using ApexApp.Infrastructure.Services.Quests;
 
 namespace ApexApp.Infrastructure.Services.Ai;
 
@@ -245,13 +246,21 @@ public static class AiContentValidator
         return result;
     }
 
-    /// <summary>Проверяет и нормализует шаги квеста.</summary>
+    /// <summary>
+    /// Проверяет и нормализует шаги квеста. Автоматические шаги разрешаются только
+    /// с кодами действий и идентификаторами из списков, переданных Backend-ом:
+    /// выдуманный идентификатор отбрасывается, а шаг помечается как требующий настройки.
+    /// </summary>
     /// <param name="items">Шаги из ответа модели.</param>
     /// <param name="max">Максимальное количество.</param>
+    /// <param name="candidates">Реальные объекты, переданные модели.</param>
+    /// <param name="allowAutomatic">Разрешены ли автоматические шаги.</param>
     /// <returns>Пригодные шаги.</returns>
     public static IReadOnlyList<QuestStepDraft> QuestSteps(
         IEnumerable<QuestStepPayload>? items,
-        int max)
+        int max,
+        QuestStepActionCandidateSets? candidates = null,
+        bool allowAutomatic = true)
     {
         var limit = Math.Clamp(max, 1, MaxSteps);
         var result = new List<QuestStepDraft>(limit);
@@ -272,11 +281,42 @@ public static class AiContentValidator
                 continue;
             }
 
+            var completionType = CompletionType(item.CompletionType);
+            string? actionType = null;
+            long? targetId = null;
+            string? achievementCode = null;
+            var needsConfiguration = false;
+
+            if (completionType == "automatic")
+            {
+                if (!allowAutomatic
+                    || !TryResolveAction(
+                        item,
+                        candidates,
+                        out actionType,
+                        out targetId,
+                        out achievementCode,
+                        out needsConfiguration))
+                {
+                    // Неизвестное или недоступное действие не пробрасывается в админку:
+                    // шаг становится ручным.
+                    completionType = "manual";
+                    actionType = null;
+                    targetId = null;
+                    achievementCode = null;
+                    needsConfiguration = false;
+                }
+            }
+
             result.Add(new QuestStepDraft(
                 title,
                 description,
-                CompletionType(item.CompletionType),
-                item.IsRequired));
+                completionType,
+                item.IsRequired,
+                actionType,
+                targetId,
+                achievementCode,
+                needsConfiguration));
 
             if (result.Count >= limit)
             {
@@ -285,6 +325,98 @@ public static class AiContentValidator
         }
 
         return result;
+    }
+
+    private static bool TryResolveAction(
+        QuestStepPayload item,
+        QuestStepActionCandidateSets? candidates,
+        out string? actionType,
+        out long? targetId,
+        out string? achievementCode,
+        out bool needsConfiguration)
+    {
+        actionType = null;
+        targetId = null;
+        achievementCode = null;
+        needsConfiguration = false;
+
+        var template = QuestStepActionRegistry.Find(item.ActionType);
+
+        if (template is null || !template.IsAvailable)
+        {
+            return false;
+        }
+
+        actionType = template.Code;
+
+        var requiresTarget = template.Parameters.Any(parameter =>
+            string.Equals(parameter.Name, "targetId", StringComparison.Ordinal));
+
+        if (requiresTarget)
+        {
+            var allowed = AllowedTargets(template.Code, candidates);
+
+            if (item.TargetId is long id && allowed.Contains(id))
+            {
+                targetId = id;
+            }
+            else
+            {
+                needsConfiguration = true;
+            }
+        }
+
+        if (template.Code == QuestStepActionCodes.EarnAchievement)
+        {
+            var allowed = candidates is null
+                ? []
+                : candidates.Achievements
+                    .Select(option => option.Id)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var code = item.AchievementCode?.Trim();
+
+            if (!string.IsNullOrWhiteSpace(code) && allowed.Contains(code))
+            {
+                achievementCode = code;
+            }
+            else
+            {
+                needsConfiguration = true;
+            }
+        }
+
+        return true;
+    }
+
+    private static HashSet<long> AllowedTargets(
+        string code,
+        QuestStepActionCandidateSets? candidates)
+    {
+        var options = code switch
+        {
+            QuestStepActionCodes.CompleteQuest => candidates?.Quests,
+            QuestStepActionCodes.CompleteSurvey => candidates?.Surveys,
+            QuestStepActionCodes.AttendEvent => candidates?.Events,
+            _ => null
+        };
+
+        if (options is null)
+        {
+            return [];
+        }
+
+        var allowed = new HashSet<long>();
+
+        foreach (var option in options)
+        {
+            if (long.TryParse(option.Id, out var id) && id > 0)
+            {
+                allowed.Add(id);
+            }
+        }
+
+        return allowed;
     }
 
     /// <summary>Проверяет и нормализует анонсы мероприятий.</summary>

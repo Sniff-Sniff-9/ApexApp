@@ -3,6 +3,7 @@ using System.Text.Json;
 using ApexApp.Domain.Entities;
 using ApexApp.Infrastructure.Common;
 using ApexApp.Infrastructure.Data;
+using ApexApp.Infrastructure.Services.Quests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -19,6 +20,8 @@ public sealed class QuestService(
     IActivityRewardService activityRewardService,
     INotificationService notificationService,
     IEngagementLevelNotifier engagementLevelNotifier,
+    IQuestProgressService questProgressService,
+    IQuestStepActionOptionProvider questStepActionOptionProvider,
     ILogger<QuestService> logger) : IQuestService
 {
     private const int TitleMaxLength = 200;
@@ -92,6 +95,10 @@ public sealed class QuestService(
             return ServiceResult<QuestDetailsResult>.Fail(404, "Quest was not found.");
         }
 
+        // Автоматические шаги сверяются до чтения состояния, чтобы ответ отражал
+        // актуальный прогресс, даже если действие было записано другим сценарием.
+        await TrySyncProgressAsync(questId, userId, cancellationToken);
+
         var participation = await dbContext.QuestParticipations
             .AsNoTracking()
             .Include(participation => participation.QuestStepCompletions)
@@ -134,6 +141,19 @@ public sealed class QuestService(
             .Where(participation => participation.UserId == userId);
 
         var totalCount = await query.CountAsync(cancellationToken);
+
+        var pageQuestIds = await query
+            .OrderByDescending(participation => participation.StartedAt)
+            .ThenByDescending(participation => participation.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(participation => participation.QuestId)
+            .ToListAsync(cancellationToken);
+
+        if (pageQuestIds.Count > 0)
+        {
+            await TrySyncProgressAsync(pageQuestIds, userId, cancellationToken);
+        }
 
         var participations = await query
     .OrderByDescending(participation => participation.StartedAt)
@@ -263,6 +283,10 @@ public sealed class QuestService(
             };
         }
 
+        // Заполняем уже существующие устойчивые факты (посещение, аватар, достижение)
+        // сразу после присоединения; ошибка сверки не должна ломать join.
+        await TrySyncProgressAsync(questId, userId, cancellationToken);
+
         return ServiceResult<QuestJoinResult>.Ok(new QuestJoinResult(participation, false));
     }
 
@@ -338,9 +362,14 @@ public sealed class QuestService(
 
         if (step.CompletionType == QuestStepCompletionType.Automatic)
         {
-            return ServiceResult<QuestStepResult>.Fail(
-                409,
-                $"Step \"{step.Title}\" requires automatic completion, which is not supported yet.");
+            // Пользователь не может подтвердить автоматический шаг вручную: сервер
+            // сверяет фактические записи и, если условие выполнено, возвращает
+            // идемпотентный результат.
+            return await CompleteAutomaticStepAsync(
+                step,
+                participation,
+                userId,
+                cancellationToken);
         }
 
         var completionType = QuestStepCompletionTypeNames.ToDbValue(step.CompletionType);
@@ -551,16 +580,25 @@ public sealed class QuestService(
                 "The quest has no mandatory steps configured.");
         }
 
-        var automaticSteps = requiredSteps
+        // Некорректно настроенный обязательный автоматический шаг нельзя ни засчитать,
+        // ни обойти: завершение квеста блокируется с понятной причиной (fail-closed).
+        var misconfiguredSteps = requiredSteps
             .Where(step => step.CompletionType == QuestStepCompletionType.Automatic)
+            .Where(step => !QuestStepActionConfiguration.TryParse(
+                step.CompletionData,
+                out _,
+                out _))
             .ToList();
 
-        if (automaticSteps.Count > 0)
+        if (misconfiguredSteps.Count > 0)
         {
             return ServiceResult<QuestCompletionResult>.Fail(
                 409,
-                $"Mandatory steps require automatic completion, which is not supported yet: {FormatTitles(automaticSteps)}.");
+                $"Mandatory automatic steps have an invalid configuration: {FormatTitles(misconfiguredSteps)}.");
         }
+
+        // Сверяем автоматические шаги перед проверкой обязательных условий.
+        await TrySyncProgressAsync(questId, userId, cancellationToken);
 
         var completions = await dbContext.QuestStepCompletions
             .AsNoTracking()
@@ -580,6 +618,17 @@ public sealed class QuestService(
 
             if (step.CompletionType == QuestStepCompletionType.Manual)
             {
+                if (stepCompletions.Count == 0)
+                {
+                    missing.Add(step);
+                }
+
+                continue;
+            }
+
+            if (step.CompletionType == QuestStepCompletionType.Automatic)
+            {
+                // Завершение автоматического шага создаётся только серверной сверкой.
                 if (stepCompletions.Count == 0)
                 {
                     missing.Add(step);
@@ -957,13 +1006,21 @@ public sealed class QuestService(
                 "A quest must have at least one required step before publishing.");
         }
 
-        if (quest.QuestSteps.Any(step =>
-                step.IsRequired
-                && step.CompletionType == QuestStepCompletionType.Automatic))
+        var automaticSteps = quest.QuestSteps
+            .Where(step => step.CompletionType == QuestStepCompletionType.Automatic)
+            .ToList();
+
+        if (automaticSteps.Count > 0)
         {
-            return ServiceResult<Quest>.Fail(
-                409,
-                "Cannot publish a quest with mandatory automatic steps; automatic completion is not supported yet.");
+            var configurationError = await ValidateAutomaticStepsAsync(
+                quest.Id,
+                automaticSteps,
+                cancellationToken);
+
+            if (configurationError is not null)
+            {
+                return ServiceResult<Quest>.Fail(409, configurationError);
+            }
         }
 
         quest.IsActive = true;
@@ -1080,7 +1137,10 @@ public sealed class QuestService(
                     $"Step {index + 1} is required.");
             }
 
-            var stepValidationError = ValidateStepFields(step, out var completionType);
+            var stepValidationError = ValidateStepFields(
+                step,
+                out var completionType,
+                out var completionData);
 
             if (stepValidationError is not null)
             {
@@ -1096,9 +1156,21 @@ public sealed class QuestService(
                 CompletionType = completionType,
                 SortOrder = step.SortOrder,
                 IsRequired = step.IsRequired,
-                CompletionData = NormalizeOptional(step.CompletionData),
+                CompletionData = completionData,
                 CreatedAt = now
             });
+        }
+
+        var createConfigurationError = await ValidateAutomaticStepsAsync(
+            quest.Id > 0 ? quest.Id : null,
+            quest.QuestSteps
+                .Where(step => step.CompletionType == QuestStepCompletionType.Automatic)
+                .ToList(),
+            cancellationToken);
+
+        if (createConfigurationError is not null)
+        {
+            return ServiceResult<Quest>.Fail(400, createConfigurationError);
         }
 
         dbContext.Quests.Add(quest);
@@ -1212,7 +1284,10 @@ public sealed class QuestService(
             return ServiceResult<QuestStep>.Fail(400, "A quest step command is required.");
         }
 
-        var validationError = ValidateStepFields(command, out var completionType);
+        var validationError = ValidateStepFields(
+            command,
+            out var completionType,
+            out var completionData);
 
         if (validationError is not null)
         {
@@ -1236,9 +1311,19 @@ public sealed class QuestService(
             CompletionType = completionType,
             SortOrder = command.SortOrder,
             IsRequired = command.IsRequired,
-            CompletionData = NormalizeOptional(command.CompletionData),
+            CompletionData = completionData,
             CreatedAt = DateTime.UtcNow
         };
+
+        var targetError = await ValidateAutomaticStepsAsync(
+            questId,
+            [step],
+            cancellationToken);
+
+        if (targetError is not null)
+        {
+            return ServiceResult<QuestStep>.Fail(400, targetError);
+        }
 
         dbContext.QuestSteps.Add(step);
 
@@ -1275,7 +1360,10 @@ public sealed class QuestService(
             return ServiceResult<QuestStep>.Fail(400, "A quest step command is required.");
         }
 
-        var validationError = ValidateStepFields(command, out var completionType);
+        var validationError = ValidateStepFields(
+            command,
+            out var completionType,
+            out var completionData);
 
         if (validationError is not null)
         {
@@ -1298,18 +1386,46 @@ public sealed class QuestService(
                 : ServiceResult<QuestStep>.Fail(404, "Quest was not found.");
         }
 
-        if (step.CompletionType != completionType)
-        {
-            var hasCompletions = await dbContext.QuestStepCompletions
-                .AsNoTracking()
-                .AnyAsync(completion => completion.StepId == stepId, cancellationToken);
+        var hasCompletions = await dbContext.QuestStepCompletions
+            .AsNoTracking()
+            .AnyAsync(completion => completion.StepId == stepId, cancellationToken);
 
-            if (hasCompletions)
-            {
-                return ServiceResult<QuestStep>.Fail(
-                    409,
-                    "The step completion type cannot be changed because participants have already completed this step.");
-            }
+        if (hasCompletions && step.CompletionType != completionType)
+        {
+            return ServiceResult<QuestStep>.Fail(
+                409,
+                "The step completion type cannot be changed because participants have already completed this step.");
+        }
+
+        // Условие уже засчитанных шагов нельзя переписать: иначе сохранённые завершения
+        // перестанут соответствовать конфигурации.
+        if (hasCompletions
+            && completionType == QuestStepCompletionType.Automatic
+            && HasActionChanged(step.CompletionData, completionData))
+        {
+            return ServiceResult<QuestStep>.Fail(
+                409,
+                "The automatic action cannot be changed because participants have already completed this step.");
+        }
+
+        var updatedStep = new QuestStep
+        {
+            Id = step.Id,
+            QuestId = step.QuestId,
+            Title = command.Title!.Trim(),
+            CompletionType = completionType,
+            IsRequired = command.IsRequired,
+            CompletionData = completionData
+        };
+
+        var targetError = await ValidateAutomaticStepsAsync(
+            questId,
+            [updatedStep],
+            cancellationToken);
+
+        if (targetError is not null)
+        {
+            return ServiceResult<QuestStep>.Fail(400, targetError);
         }
 
         step.Title = command.Title!.Trim();
@@ -1317,7 +1433,7 @@ public sealed class QuestService(
         step.CompletionType = completionType;
         step.SortOrder = command.SortOrder;
         step.IsRequired = command.IsRequired;
-        step.CompletionData = NormalizeOptional(command.CompletionData);
+        step.CompletionData = completionData;
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -1579,6 +1695,74 @@ public sealed class QuestService(
         }
     }
 
+    /// <inheritdoc />
+    public Task<IReadOnlyList<QuestStepActionTemplate>> GetStepActionsAsync(
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(QuestStepActionRegistry.All);
+
+    /// <inheritdoc />
+    public async Task<ServiceResult<QuestStepActionOptionsResult>> GetStepActionOptionsAsync(
+        string code,
+        CancellationToken cancellationToken = default)
+    {
+        var template = QuestStepActionRegistry.Find(code);
+
+        if (template is null)
+        {
+            return ServiceResult<QuestStepActionOptionsResult>.Fail(
+                404,
+                $"Unknown automatic step type \"{code}\".");
+        }
+
+        if (!template.IsAvailable)
+        {
+            return ServiceResult<QuestStepActionOptionsResult>.Ok(
+                new QuestStepActionOptionsResult(template, []));
+        }
+
+        var source = template.Parameters
+            .FirstOrDefault(parameter => parameter.OptionsSource is not null)
+            ?.OptionsSource;
+
+        IReadOnlyList<QuestStepActionOption> options = source is null
+            ? []
+            : await questStepActionOptionProvider.GetOptionsAsync(source, cancellationToken);
+
+        return ServiceResult<QuestStepActionOptionsResult>.Ok(
+            new QuestStepActionOptionsResult(template, options));
+    }
+
+    /// <inheritdoc />
+    public async Task<ServiceResult<IReadOnlyList<QuestStep>>> GetStepsForAdministrationAsync(
+        long questId,
+        CancellationToken cancellationToken = default)
+    {
+        if (questId <= 0)
+        {
+            return ServiceResult<IReadOnlyList<QuestStep>>.Fail(
+                400,
+                "A valid quest ID is required.");
+        }
+
+        var questExists = await dbContext.Quests
+            .AsNoTracking()
+            .AnyAsync(quest => quest.Id == questId, cancellationToken);
+
+        if (!questExists)
+        {
+            return ServiceResult<IReadOnlyList<QuestStep>>.Fail(404, "Quest was not found.");
+        }
+
+        var steps = await dbContext.QuestSteps
+            .AsNoTracking()
+            .Where(step => step.QuestId == questId)
+            .OrderBy(step => step.SortOrder)
+            .ThenBy(step => step.Id)
+            .ToListAsync(cancellationToken);
+
+        return ServiceResult<IReadOnlyList<QuestStep>>.Ok(steps);
+    }
+
     private static bool IsAvailable(Quest quest, DateTime now) =>
         quest.IsActive
         && (quest.StartAt is null || quest.StartAt <= now)
@@ -1587,22 +1771,10 @@ public sealed class QuestService(
     private static bool IsStepSatisfied(
         QuestStep step,
         IEnumerable<QuestStepCompletion> completions) =>
-        step.CompletionType switch
-        {
-            QuestStepCompletionType.Manual => completions
-                .Any(completion => completion.StepId == step.Id),
-            QuestStepCompletionType.Proof => completions
-                .Where(completion => completion.StepId == step.Id)
-                .Select(LatestProof)
-                .Any(proof => proof?.Status == QuestProofStatuses.Approved),
-            _ => false
-        };
+        QuestStepSatisfaction.IsSatisfied(step, completions);
 
     private static QuestProof? LatestProof(QuestStepCompletion completion) =>
-        completion.QuestProofs
-            .OrderByDescending(proof => proof.CreatedAt)
-            .ThenByDescending(proof => proof.Id)
-            .FirstOrDefault();
+        QuestStepSatisfaction.LatestProof(completion);
 
     private static string FormatTitles(IEnumerable<QuestStep> steps) =>
         string.Join(", ", steps.Select(step => $"\"{step.Title}\""));
@@ -1646,12 +1818,15 @@ public sealed class QuestService(
 
     /// <summary>
     /// Проверяет поля шага квеста и возвращает сообщение об ошибке или <c>null</c>.
+    /// Для автоматического шага формирует типизированную JSON-конфигурацию из параметров.
     /// </summary>
     private static string? ValidateStepFields(
         QuestStepCommand command,
-        out QuestStepCompletionType completionType)
+        out QuestStepCompletionType completionType,
+        out string? completionData)
     {
         completionType = QuestStepCompletionType.Manual;
+        completionData = null;
 
         if (string.IsNullOrWhiteSpace(command.Title))
         {
@@ -1676,13 +1851,452 @@ public sealed class QuestService(
             return "CompletionType must be one of \"manual\", \"proof\" or \"automatic\".";
         }
 
+        if (completionType == QuestStepCompletionType.Automatic)
+        {
+            if (command.Action is not null)
+            {
+                if (!TryBuildActionConfiguration(command.Action, out var configuration, out var actionError))
+                {
+                    return actionError;
+                }
+
+                completionData = configuration!.ToJson();
+            }
+            else if (!string.IsNullOrWhiteSpace(command.CompletionData))
+            {
+                // Совместимость со старым клиентом: конфигурация передана готовым JSON.
+                if (!QuestStepActionConfiguration.TryParse(
+                        command.CompletionData,
+                        out var parsed,
+                        out var error))
+                {
+                    return error ?? "CompletionData is not a valid automatic step configuration.";
+                }
+
+                completionData = parsed!.ToJson();
+            }
+            else
+            {
+                return "Automatic steps require an action template.";
+            }
+
+            return null;
+        }
+
+        if (command.Action is not null)
+        {
+            return "Only automatic steps accept an action template.";
+        }
+
         if (!string.IsNullOrWhiteSpace(command.CompletionData)
             && !IsValidJson(command.CompletionData))
         {
             return "CompletionData must be valid JSON.";
         }
 
+        completionData = NormalizeOptional(command.CompletionData);
+
         return null;
+    }
+
+    private static bool TryBuildActionConfiguration(
+        QuestStepActionCommand action,
+        out QuestStepActionConfiguration? configuration,
+        out string? error)
+    {
+        configuration = null;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(action.Type))
+        {
+            error = "Action.Type is required for an automatic step.";
+            return false;
+        }
+
+        var candidate = new QuestStepActionConfiguration(
+            action.Type.Trim().ToLowerInvariant(),
+            action.TargetId,
+            string.IsNullOrWhiteSpace(action.AchievementCode) ? null : action.AchievementCode.Trim(),
+            action.ProductId,
+            action.MinAmount,
+            action.Count,
+            action.RequireAvatar);
+
+        if (!QuestStepActionRegistry.TryValidate(candidate, out error))
+        {
+            return false;
+        }
+
+        configuration = candidate;
+        return true;
+    }
+
+    /// <summary>
+    /// Выполняет сверку автоматических шагов и не даёт ошибке сверки сломать основной сценарий.
+    /// </summary>
+    private async Task TrySyncProgressAsync(
+        long questId,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await questProgressService.SyncAsync(userId, [questId], cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogError(
+                exception,
+                "Quest progress sync failed for user {UserId}, quest {QuestId}",
+                userId,
+                questId);
+        }
+    }
+
+    /// <summary>
+    /// Выполняет сверку автоматических шагов по набору квестов.
+    /// </summary>
+    private async Task TrySyncProgressAsync(
+        IReadOnlyCollection<long> questIds,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await questProgressService.SyncAsync(userId, questIds, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogError(
+                exception,
+                "Quest progress sync failed for user {UserId}",
+                userId);
+        }
+    }
+
+    /// <summary>
+    /// Обрабатывает запрос завершения автоматического шага: сверяет данные и возвращает
+    /// идемпотентный результат либо объясняет, почему условие ещё не выполнено.
+    /// </summary>
+    private async Task<ServiceResult<QuestStepResult>> CompleteAutomaticStepAsync(
+        QuestStep step,
+        QuestParticipation participation,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        var existingBeforeSync = await dbContext.QuestStepCompletions
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                completion => completion.ParticipationId == participation.Id
+                              && completion.StepId == step.Id,
+                cancellationToken);
+
+        if (existingBeforeSync is null)
+        {
+            await TrySyncProgressAsync(step.QuestId, userId, cancellationToken);
+        }
+
+        var completion = existingBeforeSync ?? await dbContext.QuestStepCompletions
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                completion => completion.ParticipationId == participation.Id
+                              && completion.StepId == step.Id,
+                cancellationToken);
+
+        if (completion is null)
+        {
+            return ServiceResult<QuestStepResult>.Fail(
+                409,
+                $"Step \"{step.Title}\" is completed automatically. {DescribeAutomaticStep(step)}");
+        }
+
+        return ServiceResult<QuestStepResult>.Ok(
+            new QuestStepResult(
+                completion,
+                QuestStepCompletionTypeNames.Automatic,
+                true,
+                null,
+                existingBeforeSync is not null));
+    }
+
+    private static string DescribeAutomaticStep(QuestStep step)
+    {
+        if (QuestStepActionConfiguration.TryParse(step.CompletionData, out var configuration, out _)
+            && configuration is not null
+            && QuestStepActionRegistry.Find(configuration.Type) is { } template)
+        {
+            return template.Description;
+        }
+
+        return "The step configuration is invalid; contact an administrator.";
+    }
+
+    /// <summary>
+    /// Проверяет конфигурацию автоматических шагов перед сохранением или публикацией:
+    /// известность шаблона, существование объекта, отсутствие самоссылки и циклов,
+    /// а также достижимость обязательного шага.
+    /// </summary>
+    private async Task<string?> ValidateAutomaticStepsAsync(
+        long? questId,
+        IReadOnlyList<QuestStep> steps,
+        CancellationToken cancellationToken)
+    {
+        // Ручные и proof-шаги не имеют типизированной конфигурации и не проверяются.
+        var automaticSteps = steps
+            .Where(step => step.CompletionType == QuestStepCompletionType.Automatic)
+            .ToList();
+
+        if (automaticSteps.Count == 0)
+        {
+            return null;
+        }
+
+        var errors = new List<string>();
+
+        foreach (var step in automaticSteps)
+        {
+            if (!QuestStepActionConfiguration.TryParse(
+                    step.CompletionData,
+                    out var configuration,
+                    out var error)
+                || configuration is null)
+            {
+                errors.Add($"Step \"{step.Title}\": {error}");
+                continue;
+            }
+
+            var targetError = await ValidateActionTargetAsync(
+                configuration,
+                questId,
+                cancellationToken);
+
+            if (targetError is not null)
+            {
+                errors.Add($"Step \"{step.Title}\": {targetError}");
+                continue;
+            }
+
+            if (step.IsRequired
+                && await IsTargetClosedAsync(configuration, cancellationToken))
+            {
+                errors.Add(
+                    $"Step \"{step.Title}\": the selected object has already ended, "
+                    + "so a mandatory step could never be completed.");
+            }
+        }
+
+        return errors.Count == 0 ? null : string.Join(" ", errors);
+    }
+
+    private async Task<string?> ValidateActionTargetAsync(
+        QuestStepActionConfiguration configuration,
+        long? questId,
+        CancellationToken cancellationToken)
+    {
+        switch (configuration.Type)
+        {
+            case QuestStepActionCodes.CompleteQuest:
+            {
+                var targetId = configuration.TargetId!.Value;
+
+                if (questId == targetId)
+                {
+                    return "A quest cannot require itself.";
+                }
+
+                var exists = await dbContext.Quests
+                    .AsNoTracking()
+                    .AnyAsync(quest => quest.Id == targetId, cancellationToken);
+
+                if (!exists)
+                {
+                    return "The selected quest was not found.";
+                }
+
+                if (questId is long currentQuestId
+                    && await CreatesQuestCycleAsync(targetId, currentQuestId, cancellationToken))
+                {
+                    return "The selected quest creates a circular dependency between quests.";
+                }
+
+                return null;
+            }
+
+            case QuestStepActionCodes.CompleteSurvey:
+            {
+                var targetId = configuration.TargetId!.Value;
+
+                return await dbContext.Surveys
+                    .AsNoTracking()
+                    .AnyAsync(survey => survey.Id == targetId, cancellationToken)
+                    ? null
+                    : "The selected survey was not found.";
+            }
+
+            case QuestStepActionCodes.AttendEvent:
+            {
+                var targetId = configuration.TargetId!.Value;
+
+                return await dbContext.Events
+                    .AsNoTracking()
+                    .AnyAsync(eventItem => eventItem.Id == targetId, cancellationToken)
+                    ? null
+                    : "The selected event was not found.";
+            }
+
+            case QuestStepActionCodes.ReadCompanyNews:
+            {
+                var targetId = configuration.TargetId!.Value;
+
+                return await dbContext.CompanyNews
+                    .AsNoTracking()
+                    .AnyAsync(news => news.Id == targetId, cancellationToken)
+                    ? null
+                    : "The selected news item was not found.";
+            }
+
+            case QuestStepActionCodes.MakePurchase:
+            {
+                if (configuration.ProductId is not long productId)
+                {
+                    return null;
+                }
+
+                return await dbContext.Products
+                    .AsNoTracking()
+                    .AnyAsync(product => product.Id == productId, cancellationToken)
+                    ? null
+                    : "The selected product was not found.";
+            }
+
+            case QuestStepActionCodes.EarnAchievement:
+            {
+                var code = configuration.AchievementCode!;
+
+                return await dbContext.Achievements
+                    .AsNoTracking()
+                    .AnyAsync(
+                        achievement => achievement.Code.ToLower() == code.ToLower(),
+                        cancellationToken)
+                    ? null
+                    : $"Achievement \"{code}\" was not found.";
+            }
+
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>
+    /// Проверяет, что обязательный шаг указывает на объект, который ещё может быть выполнен.
+    /// </summary>
+    private async Task<bool> IsTargetClosedAsync(
+        QuestStepActionConfiguration configuration,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+
+        return configuration.Type switch
+        {
+            QuestStepActionCodes.CompleteQuest => await dbContext.Quests
+                .AsNoTracking()
+                .AnyAsync(
+                    quest => quest.Id == configuration.TargetId
+                             && quest.EndAt != null
+                             && quest.EndAt < now,
+                    cancellationToken),
+            QuestStepActionCodes.CompleteSurvey => await dbContext.Surveys
+                .AsNoTracking()
+                .AnyAsync(
+                    survey => survey.Id == configuration.TargetId
+                              && survey.EndAt != null
+                              && survey.EndAt < now,
+                    cancellationToken),
+            QuestStepActionCodes.AttendEvent => await dbContext.Events
+                .AsNoTracking()
+                .AnyAsync(
+                    eventItem => eventItem.Id == configuration.TargetId
+                                 && eventItem.EndAt < now,
+                    cancellationToken),
+            _ => false
+        };
+    }
+
+    /// <summary>
+    /// Обходит граф зависимостей <c>complete_quest</c> и проверяет, не возвращается ли
+    /// он к текущему квесту. Это не даёт опубликовать взаимно блокирующие квесты.
+    /// </summary>
+    private async Task<bool> CreatesQuestCycleAsync(
+        long targetQuestId,
+        long currentQuestId,
+        CancellationToken cancellationToken)
+    {
+        var frontier = new HashSet<long> { targetQuestId };
+        var visited = new HashSet<long>();
+
+        while (frontier.Count > 0)
+        {
+            if (frontier.Contains(currentQuestId))
+            {
+                return true;
+            }
+
+            foreach (var questId in frontier)
+            {
+                visited.Add(questId);
+            }
+
+            var stepConfigurations = await dbContext.QuestSteps
+                .AsNoTracking()
+                .Where(step =>
+                    frontier.Contains(step.QuestId)
+                    && step.CompletionType == QuestStepCompletionType.Automatic)
+                .Select(step => step.CompletionData)
+                .ToListAsync(cancellationToken);
+
+            var next = new HashSet<long>();
+
+            foreach (var completionData in stepConfigurations)
+            {
+                if (QuestStepActionConfiguration.TryParse(
+                        completionData,
+                        out var configuration,
+                        out _)
+                    && configuration?.Type == QuestStepActionCodes.CompleteQuest
+                    && configuration.TargetId is long nextQuestId)
+                {
+                    next.Add(nextQuestId);
+                }
+            }
+
+            next.ExceptWith(visited);
+            frontier = next;
+        }
+
+        return false;
+    }
+
+    private static bool HasActionChanged(string? existing, string? updated)
+    {
+        var hasExisting = QuestStepActionConfiguration.TryParse(
+            existing,
+            out var existingConfiguration,
+            out _);
+
+        var hasUpdated = QuestStepActionConfiguration.TryParse(
+            updated,
+            out var updatedConfiguration,
+            out _);
+
+        if (!hasExisting || !hasUpdated)
+        {
+            return true;
+        }
+
+        return !string.Equals(
+            existingConfiguration!.ToJson(),
+            updatedConfiguration!.ToJson(),
+            StringComparison.Ordinal);
     }
 
     private static bool IsValidJson(string value)

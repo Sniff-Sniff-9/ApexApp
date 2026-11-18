@@ -18,6 +18,8 @@ UnitChecks.Run(runner);
 
 AiChecks.Run(runner);
 
+QuestAutomationChecks.Run(runner);
+
 if (!args.Contains("--unit", StringComparer.OrdinalIgnoreCase))
 {
     var connectionString = await ConnectionResolver.TryResolveAsync();
@@ -38,6 +40,13 @@ if (!args.Contains("--unit", StringComparer.OrdinalIgnoreCase))
                 Console.WriteLine(
                     "NOTE  --checkout-write: the checkout check creates a temporary product and removes it afterwards.");
                 await CheckoutChecks.RunAsync(runner, provider);
+            }
+
+            if (args.Contains("--quest-write", StringComparer.OrdinalIgnoreCase))
+            {
+                Console.WriteLine(
+                    "NOTE  --quest-write: the quest check writes temporary rows and rolls the transaction back.");
+                await QuestAutomationChecks.RunAsync(runner, provider);
             }
         }
         catch (Exception exception)

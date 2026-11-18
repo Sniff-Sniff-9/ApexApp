@@ -1,4 +1,5 @@
 using System.Text;
+using ApexApp.Infrastructure.Services.Quests;
 
 namespace ApexApp.Infrastructure.Services.Ai;
 
@@ -44,10 +45,16 @@ public static class AiPromptBuilder
 
     /// <summary>Промпт для генерации шагов квеста.</summary>
     /// <param name="request">Параметры.</param>
+    /// <param name="candidates">Реальные объекты из базы, допустимые для автоматических шагов.</param>
+    /// <param name="allowAutomatic">Разрешены ли автоматические шаги.</param>
     /// <returns>Пользовательский промпт.</returns>
-    public static string QuestSteps(AiQuestStepRequest request)
+    public static string QuestSteps(
+        AiQuestStepRequest request,
+        QuestStepActionCandidateSets? candidates = null,
+        bool allowAutomatic = true)
     {
         var steps = Math.Clamp(request.StepsCount, 1, AiContentValidator.MaxSteps);
+        var options = BuildQuestStepOptions(candidates, allowAutomatic);
 
         return $$"""
             Задача: составь {{steps}} шагов квеста «{{Clean(request.QuestTitle)}}».
@@ -58,17 +65,81 @@ public static class AiPromptBuilder
             подсказка о доказательствах: {{Clean(request.ProofHint)}}
             </input>
 
+            {{options}}
+
             Требования:
             - каждый шаг — конкретное действие, выполнимое за один–три дня;
             - первый шаг не должен требовать загрузки файлов;
             - completionType: "manual" (отметка о выполнении), "proof" (нужен файл или фото),
               "automatic" (система проверяет сама);
+            - actionType указывай только для automatic и только из списка действий выше;
+            - targetId и achievementCode выбирай только из списков объектов выше;
+            - никогда не придумывай идентификаторы и не используй объекты вне списков;
+            - если для automatic не подходит ни один объект из списков, верни manual шаг;
+            - если автоматическое действие уместно, но подходящего объекта нет, верни
+              actionType, targetId null, achievementCode null и needsConfiguration true;
             - хотя бы один шаг обязателен;
             - title до 80 символов, description 150–500 символов.
 
             Верни только json:
-            {"steps":[{"title":"Название шага","description":"Описание шага","completionType":"manual","isRequired":true}]}
+            {"steps":[{"title":"Название шага","description":"Описание шага","completionType":"manual","actionType":null,"targetId":null,"achievementCode":null,"needsConfiguration":false,"isRequired":true}]}
             """;
+    }
+
+    private static string BuildQuestStepOptions(
+        QuestStepActionCandidateSets? candidates,
+        bool allowAutomatic)
+    {
+        if (!allowAutomatic)
+        {
+            return "Автоматические шаги запрещены: используй только \"manual\" или \"proof\".";
+        }
+
+        var builder = new StringBuilder();
+
+        builder.AppendLine("Доступные автоматические действия (actionType):");
+
+        foreach (var template in QuestStepActionRegistry.All.Where(template => template.IsAvailable))
+        {
+            builder.AppendLine($"- {template.Code}: {template.Description}");
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("Доступные объекты (только эти идентификаторы):");
+        AppendOptions(builder, "quests", "квесты", candidates?.Quests);
+        AppendOptions(builder, "surveys", "анкеты", candidates?.Surveys);
+        AppendOptions(builder, "events", "мероприятия", candidates?.Events);
+        AppendOptions(builder, "achievements", "достижения", candidates?.Achievements);
+
+        return builder.ToString().Trim();
+    }
+
+    private static void AppendOptions(
+        StringBuilder builder,
+        string tag,
+        string label,
+        IReadOnlyList<QuestStepActionOption>? options)
+    {
+        builder.AppendLine($"<{tag}>");
+        builder.AppendLine(label + ":");
+
+        if (options is null || options.Count == 0)
+        {
+            builder.AppendLine("нет доступных объектов");
+        }
+        else
+        {
+            foreach (var option in options)
+            {
+                var subtitle = string.IsNullOrWhiteSpace(option.Subtitle)
+                    ? string.Empty
+                    : $" ({option.Subtitle})";
+
+                builder.AppendLine($"{option.Id}: {Clean(option.Title)}{subtitle}");
+            }
+        }
+
+        builder.AppendLine($"</{tag}>");
     }
 
     /// <summary>Промпт для генерации анонса мероприятия.</summary>

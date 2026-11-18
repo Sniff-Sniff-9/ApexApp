@@ -668,6 +668,5 @@ internal static class UnitChecks
         granularity,
         to,
         offsetMinutes == 0 ? "UTC" : "Europe/Moscow",
-        offsetMinutes,
-        []);
+        offsetMinutes);
 }

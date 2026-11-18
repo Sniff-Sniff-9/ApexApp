@@ -36,6 +36,15 @@ public sealed class QuestStepPayload
     /// <summary>Тип выполнения: <c>manual</c>, <c>proof</c> или <c>automatic</c>.</summary>
     public string? CompletionType { get; set; }
 
+    /// <summary>Код автоматического действия или <c>null</c>.</summary>
+    public string? ActionType { get; set; }
+
+    /// <summary>Идентификатор выбранного объекта из списка Backend-а.</summary>
+    public long? TargetId { get; set; }
+
+    /// <summary>Код достижения из списка Backend-а.</summary>
+    public string? AchievementCode { get; set; }
+
     /// <summary>Признак обязательного шага.</summary>
     public bool IsRequired { get; set; }
 }

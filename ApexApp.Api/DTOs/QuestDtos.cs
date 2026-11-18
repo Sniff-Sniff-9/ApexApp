@@ -188,5 +188,86 @@ namespace ApexApp.Api.DTOs
         int SortOrder,
         bool IsRequired,
         string? CompletionData,
-        DateTime CreatedAt);
+        DateTime CreatedAt,
+        QuestStepActionDto? Action = null,
+        string? ConfigurationError = null);
+
+    /// <summary>
+    /// Типизированные параметры автоматического шага для административной формы.
+    /// </summary>
+    /// <param name="Type">Код действия.</param>
+    /// <param name="Name">Понятное название действия.</param>
+    /// <param name="Description">Понятное описание условия.</param>
+    /// <param name="TargetId">Идентификатор выбранного объекта.</param>
+    /// <param name="AchievementCode">Код достижения.</param>
+    /// <param name="ProductId">Товар для покупки.</param>
+    /// <param name="MinAmount">Минимальная сумма заказа.</param>
+    /// <param name="Count">Требуемое количество действий.</param>
+    /// <param name="RequireAvatar">Требование аватара.</param>
+    public sealed record QuestStepActionDto(
+        string Type,
+        string Name,
+        string Description,
+        long? TargetId,
+        string? AchievementCode,
+        long? ProductId,
+        long? MinAmount,
+        int? Count,
+        bool? RequireAvatar);
+
+    /// <summary>
+    /// Описание шаблона автоматического шага для административной формы.
+    /// </summary>
+    /// <param name="Code">Код действия.</param>
+    /// <param name="Name">Понятное название.</param>
+    /// <param name="Description">Понятное описание условия.</param>
+    /// <param name="IsAvailable">Признак доступности шаблона.</param>
+    /// <param name="UnavailableReason">Причина недоступности.</param>
+    /// <param name="Parameters">Параметры шаблона.</param>
+    public sealed record QuestStepActionTemplateDto(
+        string Code,
+        string Name,
+        string Description,
+        bool IsAvailable,
+        string? UnavailableReason,
+        IReadOnlyList<QuestStepActionParameterDto> Parameters);
+
+    /// <summary>
+    /// Описание параметра шаблона автоматического шага.
+    /// </summary>
+    /// <param name="Name">Имя параметра.</param>
+    /// <param name="Label">Подпись для администратора.</param>
+    /// <param name="Kind">Тип элемента управления: <c>entity</c>, <c>number</c>, <c>boolean</c>.</param>
+    /// <param name="OptionsSource">Источник вариантов для <c>entity</c>.</param>
+    /// <param name="Required">Признак обязательного параметра.</param>
+    /// <param name="HelpText">Пояснение.</param>
+    public sealed record QuestStepActionParameterDto(
+        string Name,
+        string Label,
+        string Kind,
+        string? OptionsSource,
+        bool Required,
+        string? HelpText);
+
+    /// <summary>
+    /// Вариант выбора объекта для параметра автоматического шага.
+    /// </summary>
+    /// <param name="Id">Идентификатор объекта или код достижения.</param>
+    /// <param name="Title">Название.</param>
+    /// <param name="Subtitle">Дополнительная подпись.</param>
+    /// <param name="IsActive">Признак доступности объекта.</param>
+    public sealed record QuestStepActionOptionDto(
+        string Id,
+        string Title,
+        string? Subtitle,
+        bool IsActive);
+
+    /// <summary>
+    /// Шаблон автоматического шага и варианты выбора его объектов.
+    /// </summary>
+    /// <param name="Template">Описание шаблона.</param>
+    /// <param name="Options">Варианты выбора.</param>
+    public sealed record QuestStepActionOptionsDto(
+        QuestStepActionTemplateDto Template,
+        IReadOnlyList<QuestStepActionOptionDto> Options);
 }

@@ -237,4 +237,30 @@ public interface IQuestService
         ReviewQuestProofCommand command,
         Guid reviewedBy,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Возвращает поддерживаемые шаблоны автоматических шагов с понятными названиями,
+    /// описаниями и параметрами для административной формы.
+    /// </summary>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    Task<IReadOnlyList<Quests.QuestStepActionTemplate>> GetStepActionsAsync(
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Возвращает шаблон и реальные варианты выбора объекта для его параметра.
+    /// </summary>
+    /// <param name="code">Код действия.</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    Task<ServiceResult<QuestStepActionOptionsResult>> GetStepActionOptionsAsync(
+        string code,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Возвращает шаги квеста в административном представлении.
+    /// </summary>
+    /// <param name="questId">Идентификатор квеста.</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    Task<ServiceResult<IReadOnlyList<QuestStep>>> GetStepsForAdministrationAsync(
+        long questId,
+        CancellationToken cancellationToken = default);
 }

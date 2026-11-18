@@ -154,7 +154,8 @@ public sealed class AiController(
                 request.QuestTitle,
                 request.QuestDescription,
                 request.StepsCount,
-                request.ProofHint),
+                request.ProofHint,
+                request.AllowAutomatic),
             adminId.Value,
             cancellationToken);
 
