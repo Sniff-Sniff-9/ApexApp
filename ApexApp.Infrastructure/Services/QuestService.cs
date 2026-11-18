@@ -1206,6 +1206,7 @@ public sealed class QuestService(
         }
 
         var quest = await dbContext.Quests
+            .Include(item => item.QuestSteps)
             .FirstOrDefaultAsync(item => item.Id == questId, cancellationToken);
 
         if (quest is null)
@@ -1222,6 +1223,23 @@ public sealed class QuestService(
         if (validationError is not null)
         {
             return ServiceResult<Quest>.Fail(400, validationError);
+        }
+
+        if (command.IsActive)
+        {
+            // Активация должна быть безопасной: ни один автоматический шаг не может
+            // остаться с несуществующим объектом или некорректной конфигурацией.
+            var activationError = await ValidateAutomaticStepsAsync(
+                questId,
+                quest.QuestSteps
+                    .Where(step => step.CompletionType == QuestStepCompletionType.Automatic)
+                    .ToList(),
+                cancellationToken);
+
+            if (activationError is not null)
+            {
+                return ServiceResult<Quest>.Fail(409, activationError);
+            }
         }
 
         quest.Title = command.Title!.Trim();

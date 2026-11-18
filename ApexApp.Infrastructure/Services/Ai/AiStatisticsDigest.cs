@@ -50,15 +50,40 @@ public sealed record AiEngagementSnapshot(
 /// <param name="Description">Описание.</param>
 public sealed record AiFinding(string Code, string Severity, string Title, string Description);
 
+/// <summary>Существующая активность, которую можно рекомендовать.</summary>
+/// <param name="Format">Формат: <c>event</c>, <c>quest</c> или <c>survey</c>.</param>
+/// <param name="Id">Идентификатор активности.</param>
+/// <param name="Title">Название.</param>
+/// <param name="IsActive">Признак активности.</param>
+/// <param name="Participants">Участники.</param>
+/// <param name="Completed">Завершения.</param>
+/// <param name="CompletionRate">Доля завершения.</param>
+/// <param name="RewardAmount">Награда в баллах.</param>
+/// <param name="StartsAt">Начало.</param>
+/// <param name="EndsAt">Окончание.</param>
+public sealed record AiActivityRow(
+    string Format,
+    long Id,
+    string Title,
+    bool IsActive,
+    long Participants,
+    long Completed,
+    double? CompletionRate,
+    long RewardAmount,
+    DateTime? StartsAt,
+    DateTime? EndsAt);
+
 /// <summary>Готовая сводка вовлечённости для промпта.</summary>
 /// <param name="Snapshot">Показатели.</param>
 /// <param name="Findings">Наблюдения правил.</param>
 /// <param name="Limitations">Ограничения интерпретации.</param>
+/// <param name="Activities">Существующие активности для рекомендаций.</param>
 /// <param name="Text">Текст сводки, передаваемый модели.</param>
 public sealed record AiEngagementDigest(
     AiEngagementSnapshot Snapshot,
     IReadOnlyList<AiFinding> Findings,
     IReadOnlyList<string> Limitations,
+    IReadOnlyList<AiActivityRow> Activities,
     string Text);
 
 /// <summary>Спрос по категории каталога.</summary>
@@ -74,24 +99,32 @@ public sealed record AiCategorySnapshot(
     long UniqueBuyers,
     bool IsReliable);
 
-/// <summary>Строка спроса по товару каталога.</summary>
+/// <summary>Строка товара каталога для рекомендаций.</summary>
+/// <param name="ProductId">Идентификатор товара; <c>null</c> для удалённого.</param>
 /// <param name="Name">Название товара.</param>
+/// <param name="CategoryId">Идентификатор категории.</param>
 /// <param name="Category">Категория.</param>
 /// <param name="Price">Цена в баллах.</param>
 /// <param name="Units">Заказанные единицы.</param>
 /// <param name="UniqueBuyers">Уникальные покупатели.</param>
 /// <param name="LiveCartUnits">Единицы в текущих корзинах.</param>
 /// <param name="Stock">Остаток; <c>null</c> — без ограничения.</param>
+/// <param name="SellThrough">Доля проданного от доступного.</param>
+/// <param name="IsActive">Признак активности товара.</param>
 /// <param name="IsOutOfStock">Признак нулевого остатка.</param>
 /// <param name="IsDigital">Признак цифрового товара.</param>
 public sealed record AiDemandRow(
+    int? ProductId,
     string Name,
+    int? CategoryId,
     string? Category,
     long Price,
     long Units,
     long UniqueBuyers,
     long LiveCartUnits,
     int? Stock,
+    double? SellThrough,
+    bool IsActive,
     bool IsOutOfStock,
     bool IsDigital);
 
@@ -121,12 +154,14 @@ public sealed record AiCatalogSnapshot(
 /// <summary>Готовая сводка каталога для промпта.</summary>
 /// <param name="Snapshot">Показатели.</param>
 /// <param name="TopDemand">Товары с наибольшим спросом.</param>
+/// <param name="StockRisks">Товары с риском по остаткам или без спроса.</param>
 /// <param name="Findings">Наблюдения правил.</param>
 /// <param name="Limitations">Ограничения интерпретации.</param>
 /// <param name="Text">Текст сводки, передаваемый модели.</param>
 public sealed record AiProductDigest(
     AiCatalogSnapshot Snapshot,
     IReadOnlyList<AiDemandRow> TopDemand,
+    IReadOnlyList<AiDemandRow> StockRisks,
     IReadOnlyList<AiFinding> Findings,
     IReadOnlyList<string> Limitations,
     string Text);
@@ -174,6 +209,25 @@ public static class AiDigestWriter
                 .Append(", завершение ").Append(Percent(format.CompletionRate))
                 .Append(", награда получена ").Append(Percent(format.RewardClaimRate))
                 .Append(", выборка ").AppendLine(format.IsReliable ? "достаточна" : "недостаточна");
+        }
+
+        builder.AppendLine("Существующие активности (format:id):");
+
+        if (digest.Activities.Count == 0)
+        {
+            builder.AppendLine("- нет данных");
+        }
+
+        foreach (var activity in digest.Activities)
+        {
+            builder
+                .Append("- ").Append(activity.Format).Append(':').Append(activity.Id)
+                .Append(" «").Append(activity.Title).Append("»")
+                .Append(": участников ").Append(activity.Participants)
+                .Append(", завершений ").Append(activity.Completed)
+                .Append(", завершение ").Append(Percent(activity.CompletionRate))
+                .Append(", награда ").Append(activity.RewardAmount)
+                .Append(", активна: ").AppendLine(activity.IsActive ? "да" : "нет");
         }
 
         builder.AppendLine("Наблюдения правил аналитики:");
@@ -252,14 +306,35 @@ public static class AiDigestWriter
         foreach (var row in digest.TopDemand)
         {
             builder
-                .Append("- ").Append(row.Name)
+                .Append("- productId ").Append(row.ProductId?.ToString() ?? "удалён")
+                .Append(": ").Append(row.Name)
                 .Append(" (").Append(row.Category ?? "без категории").Append(")")
                 .Append(": ").Append(row.Price).Append(" баллов")
                 .Append(", единиц ").Append(row.Units)
                 .Append(", покупателей ").Append(row.UniqueBuyers)
                 .Append(", в корзинах ").Append(row.LiveCartUnits)
                 .Append(", остаток ").Append(row.Stock?.ToString() ?? "без ограничения")
+                .Append(", активен: ").Append(row.IsActive ? "да" : "нет")
                 .Append(", цифровой: ").AppendLine(row.IsDigital ? "да" : "нет");
+        }
+
+        builder.AppendLine("Товары с риском по остаткам или без спроса:");
+
+        if (digest.StockRisks.Count == 0)
+        {
+            builder.AppendLine("- нет данных");
+        }
+
+        foreach (var row in digest.StockRisks)
+        {
+            builder
+                .Append("- productId ").Append(row.ProductId?.ToString() ?? "удалён")
+                .Append(": ").Append(row.Name)
+                .Append(", остаток ").Append(row.Stock?.ToString() ?? "без ограничения")
+                .Append(", единиц за окно ").Append(row.Units)
+                .Append(", в корзинах ").Append(row.LiveCartUnits)
+                .Append(", продано ").Append(Percent(row.SellThrough))
+                .Append(", активен: ").AppendLine(row.IsActive ? "да" : "нет");
         }
 
         builder.AppendLine("Наблюдения правил аналитики:");

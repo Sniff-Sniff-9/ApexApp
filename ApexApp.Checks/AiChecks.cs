@@ -18,6 +18,7 @@ internal static class AiChecks
         PromptChecks(runner);
         JsonChecks(runner);
         ValidationChecks(runner);
+        DraftChecks(runner);
         DigestChecks(runner);
     }
 
@@ -133,28 +134,34 @@ internal static class AiChecks
                 "prompt must contain the changes contract");
         });
 
-        runner.Check("ai.prompt.recommendations-focus", () =>
+        runner.Check("ai.prompt.recommendations-are-grounded", () =>
         {
             var activities = AiPromptBuilder.EngagementRecommendations(
                 "Окно: тест",
-                AiRecommendationFocus.Activities,
                 "зимняя программа",
-                5,
-                3);
+                5);
 
             CheckRunner.Ensure(
                 activities.Contains("Окно: тест", StringComparison.Ordinal),
                 "digest must reach the prompt");
 
             CheckRunner.Ensure(
-                activities.Contains("пустой массив", StringComparison.Ordinal),
-                "activities focus must ask for an empty reward list");
+                activities.Contains("\"recommendedActivities\"", StringComparison.Ordinal),
+                "engagement prompt must require existing activities");
+
+            CheckRunner.Ensure(
+                activities.Contains("activityId", StringComparison.Ordinal),
+                "engagement prompt must require activityId");
 
             var products = AiPromptBuilder.ProductRecommendations("Каталог: тест", null, 6);
 
             CheckRunner.Ensure(
-                products.Contains("\"productIdeas\"", StringComparison.Ordinal),
-                "product prompt must contain the ideas contract");
+                products.Contains("\"recommendedProducts\"", StringComparison.Ordinal),
+                "product prompt must require existing products");
+
+            CheckRunner.Ensure(
+                products.Contains("productId", StringComparison.Ordinal),
+                "product prompt must require productId");
         });
     }
 
@@ -362,6 +369,101 @@ internal static class AiChecks
         });
     }
 
+    private static void DraftChecks(CheckRunner runner)
+    {
+        runner.Check("ai.draft.quest-activity-echoes-form", () =>
+        {
+            var request = new AiQuestActivityDraftRequest(
+                "Онбординг для новичков",
+                300,
+                new DateTime(2026, 12, 1, 9, 0, 0, DateTimeKind.Utc),
+                new DateTime(2026, 12, 10, 18, 0, 0, DateTimeKind.Utc),
+                true,
+                2);
+
+            var draft = AiContentValidator.QuestActivityDraft(
+                new QuestActivityDraftPayload
+                {
+                    Title = "Онбординг",
+                    Description = "Пройдите два шага.",
+                    Steps =
+                    [
+                        new QuestStepPayload
+                        {
+                            Title = "Первый шаг",
+                            Description = "Описание шага",
+                            CompletionType = "manual",
+                            IsRequired = true
+                        }
+                    ]
+                },
+                request,
+                null);
+
+            CheckRunner.Ensure(draft is not null, "quest draft must be produced");
+            CheckRunner.Ensure(draft!.RewardAmount == 300, "reward must come from the form");
+            CheckRunner.Ensure(draft.StartAt == request.StartAt, "start must come from the form");
+            CheckRunner.Ensure(draft.IsActive, "active flag must come from the form");
+            CheckRunner.Ensure(draft.Steps[0].SortOrder == 0, "sort order must be server-assigned");
+        });
+
+        runner.Check("ai.draft.product-price-provenance", () =>
+        {
+            var payload = new ProductDraftPayload
+            {
+                Name = "Футболка",
+                Description = "Хлопковая футболка",
+                CategoryId = 2,
+                Price = 500
+            };
+
+            var aiDraft = AiContentValidator.ProductActivityDraft(
+                payload,
+                new AiProductDraftRequest("Футболка", 2),
+                new HashSet<int> { 2 },
+                300,
+                900);
+
+            CheckRunner.Ensure(aiDraft is not null, "AI price draft must be produced");
+            CheckRunner.Ensure(aiDraft!.Price == 500, "AI price must be kept");
+            CheckRunner.Ensure(aiDraft.PriceProvenance.Source == "ai", "AI price must be marked");
+            CheckRunner.Ensure(
+                aiDraft.PriceProvenance.RequiresConfirmation,
+                "AI price must require confirmation");
+            CheckRunner.Ensure(!aiDraft.IsDigital, "digital products must be false");
+
+            var userDraft = AiContentValidator.ProductActivityDraft(
+                payload,
+                new AiProductDraftRequest("Футболка", 2, Price: 450),
+                new HashSet<int> { 2 },
+                300,
+                900);
+
+            CheckRunner.Ensure(userDraft is not null, "user price draft must be produced");
+            CheckRunner.Ensure(userDraft!.Price == 450, "user price must win");
+            CheckRunner.Ensure(userDraft.PriceProvenance.Source == "user", "user price must be marked");
+            CheckRunner.Ensure(
+                !userDraft.PriceProvenance.RequiresConfirmation,
+                "user price must not require confirmation");
+        });
+
+        runner.Check("ai.draft.rejects-fabricated-category", () =>
+        {
+            var draft = AiContentValidator.ProductActivityDraft(
+                new ProductDraftPayload
+                {
+                    Name = "Товар",
+                    Description = "Описание",
+                    CategoryId = 99,
+                    Price = 100
+                },
+                new AiProductDraftRequest("Товар", 2),
+                new HashSet<int> { 2 });
+
+            CheckRunner.Ensure(draft is null, "fabricated category must be rejected");
+        });
+    }
+
     private static void DigestChecks(CheckRunner runner)
     {
         runner.Check("ai.digest.engagement-has-no-pii", () =>
@@ -390,6 +492,19 @@ internal static class AiChecks
                         "63 из 184 активных сотрудников не совершили действий.")
                 ],
                 ["Выборка отдела меньше минимальной."],
+                [
+                    new AiActivityRow(
+                        "quest",
+                        12,
+                        "Эко-неделя",
+                        true,
+                        74,
+                        21,
+                        0.285,
+                        300,
+                        null,
+                        null)
+                ],
                 string.Empty);
 
             var text = AiDigestWriter.Engagement(digest);
@@ -408,7 +523,7 @@ internal static class AiChecks
 
             CheckRunner.Ensure(
                 !GuidPattern.IsMatch(text),
-                "digest must not contain identifiers");
+                "digest must not contain GUID identifiers");
         });
 
         runner.Check("ai.digest.products-has-demand", () =>
@@ -427,7 +542,23 @@ internal static class AiChecks
 
             var digest = new AiProductDigest(
                 snapshot,
-                [new AiDemandRow("Футболка", "Мерч", 500, 12, 7, 2, 3, false, false)],
+                [
+                    new AiDemandRow(
+                        34,
+                        "Футболка",
+                        2,
+                        "Мерч",
+                        500,
+                        12,
+                        7,
+                        2,
+                        3,
+                        0.8,
+                        true,
+                        false,
+                        false)
+                ],
+                [],
                 [],
                 ["В сводку попали 20 из 42 товаров."],
                 string.Empty);
@@ -441,6 +572,10 @@ internal static class AiChecks
             CheckRunner.Ensure(
                 text.Contains("37.5%", StringComparison.Ordinal),
                 "burn rate must be rendered");
+
+            CheckRunner.Ensure(
+                text.Contains("productId 34", StringComparison.Ordinal),
+                "product identifier must be rendered");
 
             CheckRunner.Ensure(
                 !text.Contains('@') && !GuidPattern.IsMatch(text),

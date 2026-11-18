@@ -24,11 +24,13 @@ public sealed record QuestStepActionOption(
 /// <param name="Surveys">Доступные анкеты.</param>
 /// <param name="Events">Предстоящие мероприятия.</param>
 /// <param name="Achievements">Активные достижения.</param>
+/// <param name="Products">Активные товары каталога.</param>
 public sealed record QuestStepActionCandidateSets(
     IReadOnlyList<QuestStepActionOption> Quests,
     IReadOnlyList<QuestStepActionOption> Surveys,
     IReadOnlyList<QuestStepActionOption> Events,
-    IReadOnlyList<QuestStepActionOption> Achievements);
+    IReadOnlyList<QuestStepActionOption> Achievements,
+    IReadOnlyList<QuestStepActionOption> Products);
 
 /// <summary>
 /// Источник вариантов для административных списков выбора и для ИИ.
@@ -88,8 +90,12 @@ public sealed class QuestStepActionOptionProvider(AppDbContext dbContext) : IQue
             AiCandidateLimit,
             activeOnly: true,
             cancellationToken);
+        var products = await GetProductsAsync(
+            AiCandidateLimit,
+            activeOnly: true,
+            cancellationToken);
 
-        return new QuestStepActionCandidateSets(quests, surveys, events, achievements);
+        return new QuestStepActionCandidateSets(quests, surveys, events, achievements, products);
     }
 
     private async Task<IReadOnlyList<QuestStepActionOption>> GetQuestsAsync(
@@ -213,7 +219,9 @@ public sealed class QuestStepActionOptionProvider(AppDbContext dbContext) : IQue
         bool activeOnly,
         CancellationToken cancellationToken)
     {
-        var query = dbContext.Products.AsNoTracking();
+        var query = dbContext.Products
+            .AsNoTracking()
+            .Where(product => !product.IsDigital);
 
         if (activeOnly)
         {

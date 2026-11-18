@@ -27,6 +27,10 @@ using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.AddDebug();
+
 // Локальная диагностика производительности: включается только в Development
 // и только при Diagnostics:Timing:Enabled=true (по умолчанию false).
 var requestTimingEnabled = builder.Environment.IsRequestTimingEnabled(builder.Configuration);

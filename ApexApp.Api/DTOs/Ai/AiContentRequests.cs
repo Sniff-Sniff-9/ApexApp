@@ -125,3 +125,91 @@ public sealed record GenerateAlternativesRequest(
     string? TextKind = null,
     string? Tone = null,
     int Variants = 2);
+
+/// <summary>
+/// Запрос полного черновика квеста по свободному промпту.
+/// </summary>
+/// <param name="Prompt">Свободный промпт.</param>
+/// <param name="RewardAmount">Награда из формы; обязательна.</param>
+/// <param name="StartAt">Начало из формы; необязательно.</param>
+/// <param name="EndAt">Окончание из формы; необязательно.</param>
+/// <param name="IsActive">Признак активности из формы.</param>
+/// <param name="StepsCount">Количество шагов, 1–8.</param>
+/// <param name="AllowAutomatic">Разрешить автоматические шаги.</param>
+/// <param name="Audience">Аудитория; необязательно.</param>
+/// <param name="Tone">Тон; необязательно.</param>
+public sealed record GenerateQuestActivityDraftRequest(
+    string Prompt,
+    long? RewardAmount,
+    DateTime? StartAt = null,
+    DateTime? EndAt = null,
+    bool IsActive = false,
+    int StepsCount = 4,
+    bool AllowAutomatic = true,
+    string? Audience = null,
+    string? Tone = null);
+
+/// <summary>
+/// Запрос полного черновика мероприятия по свободному промпту.
+/// </summary>
+/// <param name="Prompt">Свободный промпт.</param>
+/// <param name="StartAt">Начало из формы; обязательно.</param>
+/// <param name="EndAt">Окончание из формы; обязательно.</param>
+/// <param name="RewardAmount">Награда из формы; обязательна.</param>
+/// <param name="Location">Место; необязательно.</param>
+/// <param name="MaxParticipants">Лимит участников; необязательно.</param>
+/// <param name="IsActive">Признак активности из формы.</param>
+/// <param name="Audience">Аудитория; необязательно.</param>
+/// <param name="Tone">Тон; необязательно.</param>
+public sealed record GenerateEventActivityDraftRequest(
+    string Prompt,
+    DateTime? StartAt,
+    DateTime? EndAt,
+    long? RewardAmount,
+    string? Location = null,
+    int? MaxParticipants = null,
+    bool IsActive = false,
+    string? Audience = null,
+    string? Tone = null);
+
+/// <summary>
+/// Запрос полного черновика анкеты по свободному промпту.
+/// </summary>
+/// <param name="Prompt">Свободный промпт.</param>
+/// <param name="RewardAmount">Награда из формы; обязательна.</param>
+/// <param name="StartAt">Начало из формы; необязательно.</param>
+/// <param name="EndAt">Окончание из формы; необязательно.</param>
+/// <param name="AllowMultipleResponses">Повторные ответы.</param>
+/// <param name="IsActive">Признак активности из формы.</param>
+/// <param name="QuestionsCount">Количество вопросов, 1–12.</param>
+/// <param name="Audience">Аудитория; необязательно.</param>
+/// <param name="Tone">Тон; необязательно.</param>
+public sealed record GenerateSurveyActivityDraftRequest(
+    string Prompt,
+    long? RewardAmount,
+    DateTime? StartAt = null,
+    DateTime? EndAt = null,
+    bool AllowMultipleResponses = false,
+    bool IsActive = false,
+    int QuestionsCount = 5,
+    string? Audience = null,
+    string? Tone = null);
+
+/// <summary>
+/// Запрос полного черновика товара по свободному промпту.
+/// </summary>
+/// <param name="Prompt">Свободный промпт.</param>
+/// <param name="CategoryId">Категория из формы; необязательно.</param>
+/// <param name="Price">Цена из формы; если не задана, предлагает модель.</param>
+/// <param name="Stock">Остаток из формы; необязательно.</param>
+/// <param name="ImageUrl">Ссылка на изображение из формы; необязательно.</param>
+/// <param name="IsActive">Признак активности из формы.</param>
+/// <param name="Tone">Тон; необязательно.</param>
+public sealed record GenerateProductDraftRequest(
+    string Prompt,
+    int? CategoryId = null,
+    long? Price = null,
+    int? Stock = null,
+    string? ImageUrl = null,
+    bool IsActive = false,
+    string? Tone = null);

@@ -16,11 +16,15 @@ public sealed class AiStatisticsDigestBuilder(
     IAnalyticsInsightService insightService,
     IEngagementAnalyticsService engagementService,
     IRewardAnalyticsService rewardService,
+    IActivityAnalyticsService activityService,
     IOptions<DeepSeekOptions> options,
     ILogger<AiStatisticsDigestBuilder> logger)
 {
     private const int TopDemandRows = 12;
     private const int CatalogSampleSize = 50;
+    private const int ActivitySampleSize = 50;
+    private const int ActivityRows = 20;
+    private const int StockRiskRows = 8;
     private const int MaxFindings = 12;
     private const int MaxLimitations = 10;
     private const int MaxLimitationLength = 400;
@@ -69,6 +73,29 @@ public sealed class AiStatisticsDigestBuilder(
 
         var declining = decliningResult.IsSuccess ? decliningResult.Value! : null;
 
+        var activityResult = await activityService.GetActivitiesAsync(
+            query with { Top = ActivitySampleSize },
+            format: null,
+            ActivitySortBy.Participants,
+            cancellationToken);
+
+        IReadOnlyList<AiActivityRow> activities = activityResult.IsSuccess
+            ? activityResult.Value!.Items
+                .Take(ActivityRows)
+                .Select(row => new AiActivityRow(
+                    row.Format,
+                    row.Id,
+                    row.Title,
+                    row.IsActive,
+                    row.Participants,
+                    row.Completed,
+                    row.CompletionRate,
+                    row.RewardAmount,
+                    row.StartsAt,
+                    row.EndsAt))
+                .ToList()
+            : Array.Empty<AiActivityRow>();
+
         var snapshot = new AiEngagementSnapshot(
             Describe(range),
             Metric(overview.Headcount, "active_users"),
@@ -103,8 +130,19 @@ public sealed class AiStatisticsDigestBuilder(
             limitations.Add("Данные о молчащих сотрудниках недоступны в этом запросе.");
         }
 
+        if (!activityResult.IsSuccess)
+        {
+            limitations.Add("Список существующих активностей недоступен в этом запросе.");
+        }
+
+        if (query.DepartmentId is not null)
+        {
+            limitations.Add(
+                "Список активностей общий для платформы: фильтр отдела влияет только на агрегированные показатели.");
+        }
+
         var normalized = AiContentValidator.StringList(limitations, MaxLimitations, MaxLimitationLength);
-        var digest = new AiEngagementDigest(snapshot, findings, normalized, string.Empty);
+        var digest = new AiEngagementDigest(snapshot, findings, normalized, activities, string.Empty);
         var text = Truncate(AiDigestWriter.Engagement(digest));
 
         if (logger.IsEnabled(LogLevel.Debug))
@@ -182,16 +220,23 @@ public sealed class AiStatisticsDigestBuilder(
             .Where(row => row.Units > 0)
             .OrderByDescending(row => row.Units)
             .Take(TopDemandRows)
-            .Select(row => new AiDemandRow(
-                row.Name,
-                row.Category,
-                row.Price,
-                row.Units,
-                row.UniqueBuyers,
-                row.LiveCartUnits,
-                row.Stock,
-                row.IsOutOfStock,
-                row.IsDigital))
+            .Select(ToDemandRow)
+            .ToList();
+
+        var topDemandIds = topDemand
+            .Where(row => row.ProductId is not null)
+            .Select(row => row.ProductId!.Value)
+            .ToHashSet();
+
+        var stockRisks = catalog.Items
+            .Where(row => row.ProductId is not null
+                          && row.IsActive
+                          && !topDemandIds.Contains(row.ProductId.Value)
+                          && (row.IsOutOfStock || row.Units == 0))
+            .OrderBy(row => row.Stock ?? int.MaxValue)
+            .ThenBy(row => row.Name)
+            .Take(StockRiskRows)
+            .Select(ToDemandRow)
             .ToList();
 
         IReadOnlyList<AiFinding> findings = insightResult.IsSuccess
@@ -210,6 +255,16 @@ public sealed class AiStatisticsDigestBuilder(
             limitations.Add("Наблюдения правил аналитики недоступны в этом запросе.");
         }
 
+        if (!ordersResult.IsSuccess)
+        {
+            limitations.Add("Аналитика заказов недоступна в этом запросе.");
+        }
+
+        if (!economyResult.IsSuccess)
+        {
+            limitations.Add("Экономика баллов недоступна в этом запросе.");
+        }
+
         if (catalog.Items.Count < catalog.TotalCount)
         {
             limitations.Add(
@@ -217,7 +272,13 @@ public sealed class AiStatisticsDigestBuilder(
         }
 
         var normalized = AiContentValidator.StringList(limitations, MaxLimitations, MaxLimitationLength);
-        var digest = new AiProductDigest(snapshot, topDemand, findings, normalized, string.Empty);
+        var digest = new AiProductDigest(
+            snapshot,
+            topDemand,
+            stockRisks,
+            findings,
+            normalized,
+            string.Empty);
         var text = Truncate(AiDigestWriter.Products(digest));
 
         if (logger.IsEnabled(LogLevel.Debug))
@@ -252,6 +313,22 @@ public sealed class AiStatisticsDigestBuilder(
             row.CompletionRate,
             row.RewardClaimRate,
             row.IsReliable);
+
+    private static AiDemandRow ToDemandRow(RewardCatalogRow row) =>
+        new(
+            row.ProductId,
+            row.Name,
+            row.CategoryId,
+            row.Category,
+            row.Price,
+            row.Units,
+            row.UniqueBuyers,
+            row.LiveCartUnits,
+            row.Stock,
+            row.SellThrough,
+            row.IsActive,
+            row.IsOutOfStock,
+            row.IsDigital);
 
     private static IReadOnlyList<AiFinding> ToFindings(IReadOnlyList<Insight> insights) =>
         insights

@@ -14,13 +14,15 @@ namespace ApexApp.Infrastructure.Services.Ai;
 public sealed class AiContentService(
     AiCompletionExecutor executor,
     IQuestStepActionOptionProvider optionProvider,
+    ICategoryService categoryService,
+    ICatalogService catalogService,
     IOptions<DeepSeekOptions> options,
     ILogger<AiContentService> logger) : IAiContentService
 {
     private readonly DeepSeekOptions _options = options.Value;
 
     /// <inheritdoc />
-    public async Task<ServiceResult<AiContentResult<IReadOnlyList<QuestDraft>>>> GenerateQuestDraftsAsync(
+    public async Task<ServiceResult<AiContentResult<IReadOnlyList<QuestTextDraft>>>> GenerateQuestDraftsAsync(
         AiQuestDraftRequest request,
         Guid adminId,
         CancellationToken cancellationToken = default)
@@ -40,16 +42,325 @@ public sealed class AiContentService(
 
         if (!completion.IsSuccess)
         {
-            return ServiceResult<AiContentResult<IReadOnlyList<QuestDraft>>>.Fail(
+            return ServiceResult<AiContentResult<IReadOnlyList<QuestTextDraft>>>.Fail(
                 completion.StatusCode,
                 completion.Error!);
         }
 
-        return Parse<QuestDraftsPayload, IReadOnlyList<QuestDraft>>(
+        return Parse<QuestDraftsPayload, IReadOnlyList<QuestTextDraft>>(
             "quest-drafts",
             adminId,
             completion.Value!,
             payload => AiContentValidator.QuestDrafts(payload.Variants, variants));
+    }
+
+    /// <inheritdoc />
+    public async Task<ServiceResult<AiContentResult<QuestDraft>>> GenerateQuestActivityDraftAsync(
+        AiQuestActivityDraftRequest request,
+        Guid adminId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (string.IsNullOrWhiteSpace(request.Prompt))
+        {
+            return ServiceResult<AiContentResult<QuestDraft>>.Fail(400, "Prompt is required.");
+        }
+
+        if (request.RewardAmount is null)
+        {
+            return ServiceResult<AiContentResult<QuestDraft>>.Fail(
+                400,
+                "RewardAmount is required.");
+        }
+
+        if (request.RewardAmount < 0)
+        {
+            return ServiceResult<AiContentResult<QuestDraft>>.Fail(
+                400,
+                "RewardAmount cannot be negative.");
+        }
+
+        if (request.StartAt is not null
+            && request.EndAt is not null
+            && request.EndAt <= request.StartAt)
+        {
+            return ServiceResult<AiContentResult<QuestDraft>>.Fail(
+                400,
+                "EndAt must be later than StartAt.");
+        }
+
+        var steps = Math.Clamp(request.StepsCount, 1, AiContentValidator.MaxSteps);
+        var candidates = request.AllowAutomatic
+            ? await optionProvider.GetCandidateSetsAsync(cancellationToken)
+            : null;
+
+        var prompt = AiPromptBuilder.QuestActivityDraft(
+            request with { StepsCount = steps },
+            candidates);
+
+        var completion = await executor.ExecuteAsync(
+            "quest-activity-draft",
+            AiPromptCatalog.ContentSystem,
+            prompt,
+            _options.ContentTemperature,
+            adminId,
+            cancellationToken);
+
+        if (!completion.IsSuccess)
+        {
+            return ServiceResult<AiContentResult<QuestDraft>>.Fail(
+                completion.StatusCode,
+                completion.Error!);
+        }
+
+        return Parse<QuestActivityDraftPayload, QuestDraft>(
+            "quest-activity-draft",
+            adminId,
+            completion.Value!,
+            payload => AiContentValidator.QuestActivityDraft(
+                payload,
+                request with { StepsCount = steps },
+                candidates));
+    }
+
+    /// <inheritdoc />
+    public async Task<ServiceResult<AiContentResult<EventDraft>>> GenerateEventActivityDraftAsync(
+        AiEventActivityDraftRequest request,
+        Guid adminId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (string.IsNullOrWhiteSpace(request.Prompt))
+        {
+            return ServiceResult<AiContentResult<EventDraft>>.Fail(400, "Prompt is required.");
+        }
+
+        if (request.StartAt is null || request.EndAt is null)
+        {
+            return ServiceResult<AiContentResult<EventDraft>>.Fail(
+                400,
+                "StartAt and EndAt are required.");
+        }
+
+        if (request.EndAt <= request.StartAt)
+        {
+            return ServiceResult<AiContentResult<EventDraft>>.Fail(
+                400,
+                "EndAt must be later than StartAt.");
+        }
+
+        if (request.MaxParticipants is <= 0)
+        {
+            return ServiceResult<AiContentResult<EventDraft>>.Fail(
+                400,
+                "MaxParticipants must be greater than zero.");
+        }
+
+        if (request.RewardAmount is null)
+        {
+            return ServiceResult<AiContentResult<EventDraft>>.Fail(
+                400,
+                "RewardAmount is required.");
+        }
+
+        if (request.RewardAmount < 0)
+        {
+            return ServiceResult<AiContentResult<EventDraft>>.Fail(
+                400,
+                "RewardAmount cannot be negative.");
+        }
+
+        var prompt = AiPromptBuilder.EventActivityDraft(request);
+
+        var completion = await executor.ExecuteAsync(
+            "event-activity-draft",
+            AiPromptCatalog.ContentSystem,
+            prompt,
+            _options.ContentTemperature,
+            adminId,
+            cancellationToken);
+
+        if (!completion.IsSuccess)
+        {
+            return ServiceResult<AiContentResult<EventDraft>>.Fail(
+                completion.StatusCode,
+                completion.Error!);
+        }
+
+        return Parse<EventActivityDraftPayload, EventDraft>(
+            "event-activity-draft",
+            adminId,
+            completion.Value!,
+            payload => AiContentValidator.EventActivityDraft(payload, request));
+    }
+
+    /// <inheritdoc />
+    public async Task<ServiceResult<AiContentResult<SurveyDraft>>> GenerateSurveyActivityDraftAsync(
+        AiSurveyActivityDraftRequest request,
+        Guid adminId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (string.IsNullOrWhiteSpace(request.Prompt))
+        {
+            return ServiceResult<AiContentResult<SurveyDraft>>.Fail(400, "Prompt is required.");
+        }
+
+        if (request.RewardAmount is null)
+        {
+            return ServiceResult<AiContentResult<SurveyDraft>>.Fail(
+                400,
+                "RewardAmount is required.");
+        }
+
+        if (request.RewardAmount < 0)
+        {
+            return ServiceResult<AiContentResult<SurveyDraft>>.Fail(
+                400,
+                "RewardAmount cannot be negative.");
+        }
+
+        if (request.StartAt is not null
+            && request.EndAt is not null
+            && request.EndAt <= request.StartAt)
+        {
+            return ServiceResult<AiContentResult<SurveyDraft>>.Fail(
+                400,
+                "EndAt must be later than StartAt.");
+        }
+
+        var questions = Math.Clamp(
+            request.QuestionsCount,
+            1,
+            AiContentValidator.MaxSurveyQuestions);
+
+        var prompt = AiPromptBuilder.SurveyActivityDraft(
+            request with { QuestionsCount = questions });
+
+        var completion = await executor.ExecuteAsync(
+            "survey-activity-draft",
+            AiPromptCatalog.ContentSystem,
+            prompt,
+            _options.ContentTemperature,
+            adminId,
+            cancellationToken);
+
+        if (!completion.IsSuccess)
+        {
+            return ServiceResult<AiContentResult<SurveyDraft>>.Fail(
+                completion.StatusCode,
+                completion.Error!);
+        }
+
+        return Parse<SurveyActivityDraftPayload, SurveyDraft>(
+            "survey-activity-draft",
+            adminId,
+            completion.Value!,
+            payload => AiContentValidator.SurveyActivityDraft(
+                payload,
+                request with { QuestionsCount = questions }));
+    }
+
+    /// <inheritdoc />
+    public async Task<ServiceResult<AiContentResult<ProductDraft>>> GenerateProductDraftAsync(
+        AiProductDraftRequest request,
+        Guid adminId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (string.IsNullOrWhiteSpace(request.Prompt))
+        {
+            return ServiceResult<AiContentResult<ProductDraft>>.Fail(400, "Prompt is required.");
+        }
+
+        if (request.Price is < 0)
+        {
+            return ServiceResult<AiContentResult<ProductDraft>>.Fail(
+                400,
+                "Price cannot be negative.");
+        }
+
+        if (request.Stock is < 0)
+        {
+            return ServiceResult<AiContentResult<ProductDraft>>.Fail(
+                400,
+                "Stock cannot be negative.");
+        }
+
+        var categories = (await categoryService.GetAllAsync(cancellationToken))
+            .Select(category => new CategoryOption(category.Id, category.Name))
+            .ToList();
+
+        if (request.CategoryId is int categoryId
+            && categories.All(category => category.Id != categoryId))
+        {
+            return ServiceResult<AiContentResult<ProductDraft>>.Fail(
+                400,
+                "Category was not found.");
+        }
+
+        var (referenceMin, referenceMax) = await GetPriceReferenceAsync(
+            request.CategoryId,
+            cancellationToken);
+
+        var prompt = AiPromptBuilder.ProductDraft(request, categories);
+
+        var completion = await executor.ExecuteAsync(
+            "product-draft",
+            AiPromptCatalog.ContentSystem,
+            prompt,
+            _options.ContentTemperature,
+            adminId,
+            cancellationToken);
+
+        if (!completion.IsSuccess)
+        {
+            return ServiceResult<AiContentResult<ProductDraft>>.Fail(
+                completion.StatusCode,
+                completion.Error!);
+        }
+
+        var allowedCategoryIds = categories
+            .Select(category => category.Id)
+            .ToHashSet();
+
+        return Parse<ProductDraftPayload, ProductDraft>(
+            "product-draft",
+            adminId,
+            completion.Value!,
+            payload => AiContentValidator.ProductActivityDraft(
+                payload,
+                request,
+                allowedCategoryIds,
+                referenceMin,
+                referenceMax));
+    }
+
+    /// <summary>
+    /// Возвращает реальный диапазон цен активных товаров категории.
+    /// </summary>
+    private async Task<(long? Min, long? Max)> GetPriceReferenceAsync(
+        int? categoryId,
+        CancellationToken cancellationToken)
+    {
+        if (categoryId is not int id)
+        {
+            return (null, null);
+        }
+
+        var products = await catalogService.GetAllAsync(id, cancellationToken);
+        var prices = products
+            .Where(product => product.IsActive && !product.IsDigital)
+            .Select(product => product.FinalPrice)
+            .ToList();
+
+        return prices.Count == 0
+            ? (null, null)
+            : (prices.Min(), prices.Max());
     }
 
     /// <inheritdoc />
@@ -107,7 +418,7 @@ public sealed class AiContentService(
     }
 
     /// <inheritdoc />
-    public async Task<ServiceResult<AiContentResult<IReadOnlyList<SurveyDraft>>>> GenerateSurveyDraftsAsync(
+    public async Task<ServiceResult<AiContentResult<IReadOnlyList<SurveyTextDraft>>>> GenerateSurveyDraftsAsync(
         AiSurveyDraftRequest request,
         Guid adminId,
         CancellationToken cancellationToken = default)
@@ -127,12 +438,12 @@ public sealed class AiContentService(
 
         if (!completion.IsSuccess)
         {
-            return ServiceResult<AiContentResult<IReadOnlyList<SurveyDraft>>>.Fail(
+            return ServiceResult<AiContentResult<IReadOnlyList<SurveyTextDraft>>>.Fail(
                 completion.StatusCode,
                 completion.Error!);
         }
 
-        return Parse<SurveyDraftsPayload, IReadOnlyList<SurveyDraft>>(
+        return Parse<SurveyDraftsPayload, IReadOnlyList<SurveyTextDraft>>(
             "survey-drafts",
             adminId,
             completion.Value!,

@@ -4,30 +4,13 @@ using ApexApp.Infrastructure.Services.Analytics;
 namespace ApexApp.Infrastructure.Services.Ai;
 
 /// <summary>
-/// Что именно нужно получить от модели в рекомендациях по вовлечённости.
-/// </summary>
-public enum AiRecommendationFocus
-{
-    /// <summary>Идеи активностей и наград.</summary>
-    All = 0,
-
-    /// <summary>Только идеи активностей.</summary>
-    Activities = 1,
-
-    /// <summary>Только идеи наград.</summary>
-    Rewards = 2
-}
-
-/// <summary>
 /// Запрос рекомендаций по вовлечённости. Окно уже проверено вызывающим кодом,
 /// статистика собирается на стороне Backend-а.
 /// </summary>
 /// <param name="Query">Проверенный запрос аналитики с фильтром отдела.</param>
-/// <param name="Focus">Что предложить.</param>
 /// <param name="Notes">Необязательные пожелания администратора.</param>
 public sealed record AiEngagementRecommendationCommand(
     AnalyticsQuery Query,
-    AiRecommendationFocus Focus,
     string? Notes);
 
 /// <summary>
@@ -39,86 +22,71 @@ public sealed record AiProductRecommendationCommand(
     AnalyticsQuery Query,
     string? Notes);
 
-/// <summary>Идея активности для повышения вовлечённости.</summary>
-/// <param name="Kind">Формат: <c>quest</c>, <c>mini_game</c>, <c>competition</c>, <c>event</c> или <c>survey</c>.</param>
-/// <param name="Title">Название.</param>
-/// <param name="Description">Описание.</param>
-/// <param name="WhyItFits">Почему идея подходит данным.</param>
-/// <param name="Effort">Трудоёмкость: <c>low</c>, <c>medium</c> или <c>high</c>.</param>
+/// <summary>Рекомендация существующей активности.</summary>
+/// <param name="Format">Формат: <c>event</c>, <c>quest</c> или <c>survey</c>.</param>
+/// <param name="ActivityId">Идентификатор существующей активности.</param>
+/// <param name="Title">Название, взятое из базы.</param>
+/// <param name="Action">Рекомендуемое действие.</param>
+/// <param name="Rationale">Обоснование по реальным показателям.</param>
 /// <param name="ExpectedImpact">Ожидаемый эффект.</param>
-public sealed record ActivityIdea(
-    string Kind,
+public sealed record ActivityRecommendation(
+    string Format,
+    long ActivityId,
     string Title,
-    string Description,
-    string WhyItFits,
-    string Effort,
+    string Action,
+    string Rationale,
     string ExpectedImpact);
 
-/// <summary>Идея награды для повышения вовлечённости.</summary>
-/// <param name="Title">Название.</param>
-/// <param name="Description">Описание.</param>
-/// <param name="Rationale">Обоснование по данным.</param>
-/// <param name="SuggestedPriceBand">Ориентировочный диапазон цены в баллах.</param>
-public sealed record RewardIdea(
-    string Title,
-    string Description,
-    string Rationale,
-    string? SuggestedPriceBand);
-
-/// <summary>Идея товара для каталога наград.</summary>
-/// <param name="Name">Название.</param>
-/// <param name="Category">Категория.</param>
-/// <param name="Description">Описание.</param>
-/// <param name="ShortPitch">Короткий питч для карточки.</param>
-/// <param name="PriceBand">Ориентировочный диапазон цены в баллах.</param>
-/// <param name="Rationale">Обоснование по данным.</param>
-/// <param name="Tags">Теги.</param>
-public sealed record ProductIdea(
+/// <summary>Рекомендация существующего товара.</summary>
+/// <param name="ProductId">Идентификатор существующего товара.</param>
+/// <param name="Name">Название, взятое из базы.</param>
+/// <param name="Action">Рекомендуемое действие.</param>
+/// <param name="Rationale">Обоснование по реальным показателям.</param>
+/// <param name="ExpectedImpact">Ожидаемый эффект.</param>
+public sealed record ProductRecommendation(
+    int ProductId,
     string Name,
-    string Category,
-    string Description,
-    string ShortPitch,
-    string? PriceBand,
+    string Action,
     string Rationale,
-    IReadOnlyList<string> Tags);
+    string ExpectedImpact);
 
 /// <summary>
-/// Рекомендации по вовлечённости: показатели, на которых они основаны, анализ
-/// модели, идеи активностей и наград. Ничего не сохраняется в базе данных.
+/// Рекомендации по вовлечённости: показатели, анализ и рекомендации существующих
+/// активностей. Ничего не сохраняется в базе данных.
 /// </summary>
 /// <param name="Engagement">Показатели, переданные модели.</param>
+/// <param name="Activities">Существующие активности, переданные модели.</param>
 /// <param name="Analysis">Краткий анализ от модели.</param>
-/// <param name="Findings">Наблюдения правил, на которые опирались рекомендации.</param>
-/// <param name="ActivityIdeas">Идеи активностей.</param>
-/// <param name="RewardIdeas">Идеи наград.</param>
+/// <param name="Findings">Наблюдения правил.</param>
+/// <param name="RecommendedActivities">Рекомендации существующих активностей.</param>
 /// <param name="Limitations">Ограничения интерпретации.</param>
 /// <param name="Meta">Метрики генерации.</param>
 public sealed record EngagementRecommendationReport(
     AiEngagementSnapshot Engagement,
+    IReadOnlyList<AiActivityRow> Activities,
     string Analysis,
     IReadOnlyList<AiFinding> Findings,
-    IReadOnlyList<ActivityIdea> ActivityIdeas,
-    IReadOnlyList<RewardIdea> RewardIdeas,
+    IReadOnlyList<ActivityRecommendation> RecommendedActivities,
     IReadOnlyList<string> Limitations,
     AiGenerationMeta Meta);
 
 /// <summary>
-/// Рекомендации по каталогу наград: показатели спроса, анализ модели, идеи товаров
-/// и управленческие действия. Ничего не сохраняется в базе данных.
+/// Рекомендации по каталогу наград: показатели спроса, анализ и рекомендации
+/// существующих товаров. Ничего не сохраняется в базе данных.
 /// </summary>
 /// <param name="Catalog">Показатели, переданные модели.</param>
+/// <param name="Products">Существующие товары, переданные модели.</param>
 /// <param name="Analysis">Краткий анализ от модели.</param>
 /// <param name="Findings">Наблюдения правил.</param>
-/// <param name="ProductIdeas">Идеи товаров.</param>
-/// <param name="CatalogActions">Действия по каталогу.</param>
+/// <param name="RecommendedProducts">Рекомендации существующих товаров.</param>
 /// <param name="Limitations">Ограничения интерпретации.</param>
 /// <param name="Meta">Метрики генерации.</param>
 public sealed record ProductRecommendationReport(
     AiCatalogSnapshot Catalog,
+    IReadOnlyList<AiDemandRow> Products,
     string Analysis,
     IReadOnlyList<AiFinding> Findings,
-    IReadOnlyList<ProductIdea> ProductIdeas,
-    IReadOnlyList<string> CatalogActions,
+    IReadOnlyList<ProductRecommendation> RecommendedProducts,
     IReadOnlyList<string> Limitations,
     AiGenerationMeta Meta);
 

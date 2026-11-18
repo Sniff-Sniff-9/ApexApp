@@ -22,6 +22,55 @@ public sealed record CategorySummaryDto(
         new(category.Name, category.Products, category.Units, category.UniqueBuyers, category.IsReliable);
 }
 
+/// <summary>Существующий товар, переданный модели.</summary>
+/// <param name="ProductId">Идентификатор товара.</param>
+/// <param name="Name">Название.</param>
+/// <param name="CategoryId">Категория.</param>
+/// <param name="Category">Название категории.</param>
+/// <param name="Price">Цена.</param>
+/// <param name="Units">Заказанные единицы.</param>
+/// <param name="UniqueBuyers">Покупатели.</param>
+/// <param name="LiveCartUnits">Единицы в корзинах.</param>
+/// <param name="Stock">Остаток.</param>
+/// <param name="SellThrough">Доля проданного.</param>
+/// <param name="IsActive">Признак активности.</param>
+/// <param name="IsOutOfStock">Нет в наличии.</param>
+/// <param name="IsDigital">Цифровой товар.</param>
+public sealed record AiProductSummaryDto(
+    int? ProductId,
+    string Name,
+    int? CategoryId,
+    string? Category,
+    long Price,
+    long Units,
+    long UniqueBuyers,
+    long LiveCartUnits,
+    int? Stock,
+    double? SellThrough,
+    bool IsActive,
+    bool IsOutOfStock,
+    bool IsDigital)
+{
+    /// <summary>Создаёт DTO из строки товара.</summary>
+    /// <param name="row">Строка товара.</param>
+    /// <returns>DTO товара.</returns>
+    public static AiProductSummaryDto From(AiDemandRow row) =>
+        new(
+            row.ProductId,
+            row.Name,
+            row.CategoryId,
+            row.Category,
+            row.Price,
+            row.Units,
+            row.UniqueBuyers,
+            row.LiveCartUnits,
+            row.Stock,
+            row.SellThrough,
+            row.IsActive,
+            row.IsOutOfStock,
+            row.IsDigital);
+}
+
 /// <summary>Показатели каталога, переданные модели.</summary>
 /// <param name="TotalProducts">Всего товаров в каталоге.</param>
 /// <param name="Orders">Заказы за окно.</param>
@@ -62,50 +111,44 @@ public sealed record CatalogSummaryDto(
             snapshot.Categories.Select(CategorySummaryDto.From).ToList());
 }
 
-/// <summary>Идея товара для каталога наград.</summary>
-/// <param name="Name">Название.</param>
-/// <param name="Category">Категория.</param>
-/// <param name="Description">Описание.</param>
-/// <param name="ShortPitch">Короткий питч для карточки.</param>
-/// <param name="PriceBand">Ориентировочный диапазон цены в баллах.</param>
-/// <param name="Rationale">Обоснование по данным.</param>
-/// <param name="Tags">Теги.</param>
-public sealed record ProductIdeaDto(
+/// <summary>Рекомендация существующего товара.</summary>
+/// <param name="ProductId">Идентификатор существующего товара.</param>
+/// <param name="Name">Название из базы.</param>
+/// <param name="Action">Рекомендуемое действие.</param>
+/// <param name="Rationale">Обоснование по реальным показателям.</param>
+/// <param name="ExpectedImpact">Ожидаемый эффект.</param>
+public sealed record CatalogRecommendationDto(
+    int ProductId,
     string Name,
-    string Category,
-    string Description,
-    string ShortPitch,
-    string? PriceBand,
+    string Action,
     string Rationale,
-    IReadOnlyList<string> Tags)
+    string ExpectedImpact)
 {
-    /// <summary>Создаёт DTO из идеи товара.</summary>
-    /// <param name="idea">Идея товара.</param>
-    /// <returns>DTO идеи.</returns>
-    public static ProductIdeaDto From(ProductIdea idea) =>
+    /// <summary>Создаёт DTO из рекомендации.</summary>
+    /// <param name="recommendation">Рекомендация.</param>
+    /// <returns>DTO рекомендации.</returns>
+    public static CatalogRecommendationDto From(ProductRecommendation recommendation) =>
         new(
-            idea.Name,
-            idea.Category,
-            idea.Description,
-            idea.ShortPitch,
-            idea.PriceBand,
-            idea.Rationale,
-            idea.Tags);
+            recommendation.ProductId,
+            recommendation.Name,
+            recommendation.Action,
+            recommendation.Rationale,
+            recommendation.ExpectedImpact);
 }
 
 /// <summary>Отчёт рекомендаций по каталогу наград.</summary>
 /// <param name="Catalog">Показатели, переданные модели.</param>
+/// <param name="Products">Существующие товары.</param>
 /// <param name="Analysis">Краткий анализ.</param>
 /// <param name="Findings">Наблюдения правил.</param>
-/// <param name="ProductIdeas">Идеи товаров.</param>
-/// <param name="CatalogActions">Действия по каталогу.</param>
+/// <param name="RecommendedProducts">Рекомендации существующих товаров.</param>
 /// <param name="Limitations">Ограничения интерпретации.</param>
 public sealed record ProductRecommendationDto(
     CatalogSummaryDto Catalog,
+    IReadOnlyList<AiProductSummaryDto> Products,
     string Analysis,
     IReadOnlyList<AiFindingDto> Findings,
-    IReadOnlyList<ProductIdeaDto> ProductIdeas,
-    IReadOnlyList<string> CatalogActions,
+    IReadOnlyList<CatalogRecommendationDto> RecommendedProducts,
     IReadOnlyList<string> Limitations)
 {
     /// <summary>Создаёт DTO из отчёта сервиса.</summary>
@@ -114,9 +157,9 @@ public sealed record ProductRecommendationDto(
     public static ProductRecommendationDto From(ProductRecommendationReport report) =>
         new(
             CatalogSummaryDto.From(report.Catalog),
+            report.Products.Select(AiProductSummaryDto.From).ToList(),
             report.Analysis,
             report.Findings.Select(AiFindingDto.From).ToList(),
-            report.ProductIdeas.Select(ProductIdeaDto.From).ToList(),
-            report.CatalogActions,
+            report.RecommendedProducts.Select(CatalogRecommendationDto.From).ToList(),
             report.Limitations);
 }

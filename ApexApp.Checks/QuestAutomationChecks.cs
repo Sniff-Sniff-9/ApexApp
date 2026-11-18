@@ -205,7 +205,8 @@ internal static class QuestAutomationChecks
             [new QuestStepActionOption("1", "Онбординг", "до 2026-12-01", true)],
             [new QuestStepActionOption("5", "Пульс-опрос", "один ответ", true)],
             [new QuestStepActionOption("9", "Хакатон", "2026-12-10 — 2026-12-11", true)],
-            [new QuestStepActionOption("FIRST_ORDER", "Первый заказ", "FIRST_ORDER", true)]);
+            [new QuestStepActionOption("FIRST_ORDER", "Первый заказ", "FIRST_ORDER", true)],
+            [new QuestStepActionOption("34", "Футболка", "500 баллов", true)]);
 
         runner.Check("quest.ai.accepts-listed-target", () =>
         {
@@ -228,8 +229,8 @@ internal static class QuestAutomationChecks
             CheckRunner.Ensure(
                 steps[0].CompletionType == "automatic",
                 "known action must stay automatic");
-            CheckRunner.Ensure(steps[0].ActionType == "complete_survey", "action must be kept");
-            CheckRunner.Ensure(steps[0].TargetId == 5, "listed target must be kept");
+            CheckRunner.Ensure(steps[0].Action?.Type == "complete_survey", "action must be kept");
+            CheckRunner.Ensure(steps[0].Action?.TargetId == 5, "listed target must be kept");
             CheckRunner.Ensure(!steps[0].NeedsConfiguration, "listed target needs no manual setup");
         });
 
@@ -251,7 +252,7 @@ internal static class QuestAutomationChecks
                 candidates);
 
             CheckRunner.Ensure(
-                steps[0].TargetId is null,
+                steps[0].Action?.TargetId is null,
                 "fabricated identifier must be discarded");
             CheckRunner.Ensure(
                 steps[0].NeedsConfiguration,
@@ -278,7 +279,7 @@ internal static class QuestAutomationChecks
                 steps[0].CompletionType == "manual",
                 "unsupported action must become a manual step");
             CheckRunner.Ensure(
-                steps[0].ActionType is null,
+                steps[0].Action is null,
                 "unsupported action code must be dropped");
         });
 
@@ -302,6 +303,87 @@ internal static class QuestAutomationChecks
             CheckRunner.Ensure(
                 steps[0].CompletionType == "manual",
                 "automatic must be disabled by the request flag");
+        });
+
+        runner.Check("quest.ai.make-purchase-parameters", () =>
+        {
+            var steps = AiContentValidator.QuestSteps(
+                [
+                    new QuestStepPayload
+                    {
+                        Title = "Купить футболку",
+                        Description = "Оформите заказ на футболку.",
+                        CompletionType = "automatic",
+                        ActionType = "make_purchase",
+                        ProductId = 34,
+                        MinAmount = 500,
+                        IsRequired = true
+                    }
+                ],
+                8,
+                candidates);
+
+            CheckRunner.Ensure(steps.Count == 1, "step must be kept");
+            CheckRunner.Ensure(steps[0].Action?.Type == "make_purchase", "action must be kept");
+            CheckRunner.Ensure(steps[0].Action?.ProductId == 34, "product must be kept");
+            CheckRunner.Ensure(steps[0].Action?.MinAmount == 500, "amount must be kept");
+            CheckRunner.Ensure(!steps[0].NeedsConfiguration, "known parameters need no setup");
+        });
+
+        runner.Check("quest.ai.thanks-count-and-avatar", () =>
+        {
+            var steps = AiContentValidator.QuestSteps(
+                [
+                    new QuestStepPayload
+                    {
+                        Title = "Поблагодарить коллег",
+                        Description = "Отправьте пять благодарностей.",
+                        CompletionType = "automatic",
+                        ActionType = "send_thanks",
+                        Count = 5,
+                        IsRequired = true
+                    },
+                    new QuestStepPayload
+                    {
+                        Title = "Заполнить профиль",
+                        Description = "Установите аватар.",
+                        CompletionType = "automatic",
+                        ActionType = "complete_profile",
+                        RequireAvatar = true,
+                        IsRequired = false
+                    }
+                ],
+                8,
+                candidates);
+
+            CheckRunner.Ensure(steps.Count == 2, "both steps must be kept");
+            CheckRunner.Ensure(steps[0].Action?.Count == 5, "count must be kept");
+            CheckRunner.Ensure(
+                steps[1].Action?.RequireAvatar == true,
+                "avatar requirement must be kept");
+        });
+
+        runner.Check("quest.ai.rejects-fabricated-product", () =>
+        {
+            var steps = AiContentValidator.QuestSteps(
+                [
+                    new QuestStepPayload
+                    {
+                        Title = "Купить несуществующий товар",
+                        Description = "Такого товара нет в списке.",
+                        CompletionType = "automatic",
+                        ActionType = "make_purchase",
+                        ProductId = 999,
+                        IsRequired = true
+                    }
+                ],
+                8,
+                candidates);
+
+            CheckRunner.Ensure(steps[0].Action?.ProductId is null, "product must be discarded");
+            CheckRunner.Ensure(
+                steps[0].NeedsConfiguration,
+                "step must be flagged for manual configuration");
         });
 
         runner.Check("quest.ai.prompt-lists-only-backend-objects", () =>

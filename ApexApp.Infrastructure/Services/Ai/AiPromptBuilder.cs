@@ -73,7 +73,10 @@ public static class AiPromptBuilder
             - completionType: "manual" (отметка о выполнении), "proof" (нужен файл или фото),
               "automatic" (система проверяет сама);
             - actionType указывай только для automatic и только из списка действий выше;
-            - targetId и achievementCode выбирай только из списков объектов выше;
+            - targetId, achievementCode и productId выбирай только из списков объектов выше;
+            - для make_purchase выбери productId, minAmount, оба условия или ни одного (любая покупка);
+            - count — целое число не меньше 1 (без верхнего предела); minAmount — не меньше 0;
+            - requireAvatar допустим только true; complete_profile проверяет только аватар;
             - никогда не придумывай идентификаторы и не используй объекты вне списков;
             - если для automatic не подходит ни один объект из списков, верни manual шаг;
             - если автоматическое действие уместно, но подходящего объекта нет, верни
@@ -82,7 +85,7 @@ public static class AiPromptBuilder
             - title до 80 символов, description 150–500 символов.
 
             Верни только json:
-            {"steps":[{"title":"Название шага","description":"Описание шага","completionType":"manual","actionType":null,"targetId":null,"achievementCode":null,"needsConfiguration":false,"isRequired":true}]}
+            {"steps":[{"title":"Название шага","description":"Описание шага","completionType":"manual","actionType":null,"targetId":null,"achievementCode":null,"productId":null,"minAmount":null,"count":null,"requireAvatar":null,"needsConfiguration":false,"isRequired":true}]}
             """;
     }
 
@@ -110,6 +113,7 @@ public static class AiPromptBuilder
         AppendOptions(builder, "surveys", "анкеты", candidates?.Surveys);
         AppendOptions(builder, "events", "мероприятия", candidates?.Events);
         AppendOptions(builder, "achievements", "достижения", candidates?.Achievements);
+        AppendOptions(builder, "products", "товары", candidates?.Products);
 
         return builder.ToString().Trim();
     }
@@ -270,6 +274,151 @@ public static class AiPromptBuilder
             """;
     }
 
+    /// <summary>Промпт для полного черновика квеста.</summary>
+    /// <param name="request">Параметры.</param>
+    /// <param name="candidates">Реальные объекты для автоматических шагов.</param>
+    /// <returns>Пользовательский промпт.</returns>
+    public static string QuestActivityDraft(
+        AiQuestActivityDraftRequest request,
+        QuestStepActionCandidateSets? candidates)
+    {
+        var steps = Math.Clamp(request.StepsCount, 1, AiContentValidator.MaxSteps);
+        var options = BuildQuestStepOptions(candidates, request.AllowAutomatic);
+
+        return $$"""
+            Задача: подготовь полный черновик квеста для сотрудников по свободному запросу администратора.
+
+            Запрос администратора:
+            <input>
+            {{Clean(request.Prompt)}}
+            аудитория: {{Clean(request.Audience)}}
+            тон: {{Clean(request.Tone)}}
+            </input>
+
+            {{options}}
+
+            Требования:
+            - title: 3–8 слов, до 80 символов, без кавычек и точки в конце;
+            - description: 300–900 символов; зачем сотруднику проходить квест и что его ждёт;
+            - steps: ровно {{steps}} шагов;
+            - completionType: "manual", "proof" или "automatic";
+            - для automatic обязательно заполни actionType и параметры из списка выше;
+            - targetId, achievementCode и productId выбирай только из списков объектов выше;
+            - count — целое число не меньше 1; minAmount — целое число не меньше 0;
+            - никогда не придумывай идентификаторы и не используй объекты вне списков;
+            - даты, награду и признак активности не возвращай: их задаёт форма;
+            - не обещай призы, сроки и условия, которых нет в запросе;
+            - хотя бы один шаг обязателен; отметь обязательные шаги isRequired=true.
+
+            Верни только json:
+            {"title":"Название квеста","description":"Описание квеста","steps":[{"title":"Шаг","description":"Описание шага","completionType":"manual","actionType":null,"targetId":null,"achievementCode":null,"productId":null,"minAmount":null,"count":null,"requireAvatar":null,"isRequired":true}]}
+            """;
+    }
+
+    /// <summary>Промпт для полного черновика мероприятия.</summary>
+    /// <param name="request">Параметры.</param>
+    /// <returns>Пользовательский промпт.</returns>
+    public static string EventActivityDraft(AiEventActivityDraftRequest request)
+    {
+        return $$"""
+            Задача: подготовь полный черновик корпоративного мероприятия по свободному запросу администратора.
+
+            Запрос администратора:
+            <input>
+            {{Clean(request.Prompt)}}
+            аудитория: {{Clean(request.Audience)}}
+            тон: {{Clean(request.Tone)}}
+            </input>
+
+            Требования:
+            - title: до 80 символов;
+            - description: 300–900 символов; что будет, кому полезно, как подготовиться;
+            - не выдумывай программу, спикеров, место и условия;
+            - даты, место, лимит участников, награду и активность не возвращай: их задаёт форма.
+
+            Верни только json:
+            {"title":"Название мероприятия","description":"Описание мероприятия"}
+            """;
+    }
+
+    /// <summary>Промпт для полного черновика анкеты.</summary>
+    /// <param name="request">Параметры.</param>
+    /// <returns>Пользовательский промпт.</returns>
+    public static string SurveyActivityDraft(AiSurveyActivityDraftRequest request)
+    {
+        var questions = Math.Clamp(
+            request.QuestionsCount,
+            1,
+            AiContentValidator.MaxSurveyQuestions);
+
+        return $$"""
+            Задача: подготовь полный черновик анкеты для сотрудников по свободному запросу администратора.
+
+            Запрос администратора:
+            <input>
+            {{Clean(request.Prompt)}}
+            аудитория: {{Clean(request.Audience)}}
+            тон: {{Clean(request.Tone)}}
+            </input>
+
+            Требования:
+            - title: 3–8 слов, до 80 символов, без кавычек и точки в конце;
+            - description: 200–600 символов; кому и зачем проходить анкету;
+            - questions: ровно {{questions}} вопросов;
+            - questionType: "text", "single_choice", "multiple_choice", "number", "boolean" или "rating";
+            - options: 2–6 вариантов только для choice-типов; иначе пустой массив;
+            - isRequired: true у ключевых вопросов; необязательных — не больше двух;
+            - вопросы не дублируют друг друга и не подсказывают «удобный» ответ;
+            - даты, награду, повторные ответы и активность не возвращай: их задаёт форма.
+
+            Верни только json:
+            {"title":"Название анкеты","description":"Описание анкеты","questions":[{"questionText":"Текст вопроса","questionType":"single_choice","options":["Вариант 1","Вариант 2"],"isRequired":true}]}
+            """;
+    }
+
+    /// <summary>Промпт для полного черновика товара.</summary>
+    /// <param name="request">Параметры.</param>
+    /// <param name="categories">Реальные категории каталога.</param>
+    /// <returns>Пользовательский промпт.</returns>
+    public static string ProductDraft(
+        AiProductDraftRequest request,
+        IReadOnlyList<CategoryOption> categories)
+    {
+        var categoryLines = categories.Count == 0
+            ? "нет доступных категорий"
+            : string.Join(
+                Environment.NewLine,
+                categories.Select(category => $"- {category.Id}: {Clean(category.Name)}"));
+
+        return $$"""
+            Задача: подготовь черновик товара для каталога наград по свободному запросу мерчандайзера.
+
+            Запрос мерчандайзера:
+            <input>
+            {{Clean(request.Prompt)}}
+            тон: {{Clean(request.Tone)}}
+            цена из формы: {{Points(request.Price)}}
+            остаток из формы: {{Stock(request.Stock)}}
+            </input>
+
+            Реальные категории (выбирай только этот id):
+            <categories>
+            {{categoryLines}}
+            </categories>
+
+            Требования:
+            - name: 3–80 символов, без кавычек;
+            - description: 200–600 символов; чем полезен товар и кому он подойдёт;
+            - categoryId: только идентификатор из списка категорий или null;
+            - price: если цена задана в форме, не меняй её; если нет — предложи цену в баллах;
+            - не придумывай бренды, изображения, остатки и характеристики;
+            - digital-товары запрещены: не предлагай цифровые товары.
+
+            Верни только json:
+            {"name":"Название","description":"Описание","categoryId":null,"price":500}
+            """;
+    }
+
     /// <summary>Промпт для улучшения существующего текста.</summary>
     /// <param name="request">Параметры.</param>
     /// <returns>Пользовательский промпт.</returns>
@@ -329,32 +478,19 @@ public static class AiPromptBuilder
 
     /// <summary>Промпт для рекомендаций по вовлеченности.</summary>
     /// <param name="digest">Сводка показателей, рассчитанная Backend-ом.</param>
-    /// <param name="focus">Что именно нужно предложить.</param>
     /// <param name="notes">Пожелания администратора.</param>
-    /// <param name="activityIdeas">Сколько идей активности запросить.</param>
-    /// <param name="rewardIdeas">Сколько идей наград запросить.</param>
+    /// <param name="maxActivities">Максимальное количество рекомендаций.</param>
     /// <returns>Пользовательский промпт.</returns>
     public static string EngagementRecommendations(
         string digest,
-        AiRecommendationFocus focus,
         string? notes,
-        int activityIdeas,
-        int rewardIdeas)
+        int maxActivities)
     {
-        var focusLine = focus switch
-        {
-            AiRecommendationFocus.Activities =>
-                "Нужны только идеи активностей; в rewardIdeas верни пустой массив.",
-            AiRecommendationFocus.Rewards =>
-                "Нужны только идеи наград; в activityIdeas верни пустой массив.",
-            _ => $"Нужно {activityIdeas} идей активностей и {rewardIdeas} идей наград."
-        };
-
         return $$"""
-            Задача: проанализируй вовлеченность сотрудников и предложи, что делать дальше.
-            {{focusLine}}
+            Задача: проанализируй вовлеченность сотрудников и порекомендуй, что делать
+            с уже существующими активностями.
 
-            Показатели, рассчитанные Backend-ом:
+            Показатели и существующие активности, рассчитанные Backend-ом:
             <statistics>
             {{digest}}
             </statistics>
@@ -366,32 +502,33 @@ public static class AiPromptBuilder
 
             Требования:
             - analysis: 2–5 предложений, только выводы из <statistics>;
-            - activityIdeas: kind — quest | mini_game | competition | event | survey;
-              effort — low | medium | high;
-              whyItFits обязательно содержит число или код наблюдения из <statistics>;
-            - rewardIdeas: rationale содержит показатель спроса или экономики баллов;
-            - dataLimitations: ограничения выборки, о которых предупреждают сами данные;
-            - не предлагай формат, который по данным уже работает лучше всех.
+            - recommendedActivities: не больше {{maxActivities}} записей;
+            - format и activityId бери только из раздела «Существующие активности»;
+            - не придумывай активности, названия, идентификаторы и метрики;
+            - action: promote | repeat | extend | fix | retire | pause;
+            - rationale обязательно содержит конкретное число или код наблюдения из <statistics>;
+            - dataLimitations: ограничения выборки, о которых предупреждают сами данные.
 
             Верни только json:
-            {"analysis":"Краткий анализ","activityIdeas":[{"kind":"quest","title":"Название","description":"Описание","whyItFits":"Обоснование по числу","effort":"low","expectedImpact":"Ожидаемый эффект"}],"rewardIdeas":[{"title":"Название","description":"Описание","rationale":"Обоснование по числу","suggestedPriceBand":"300–600"}],"dataLimitations":["Ограничение"]}
+            {"analysis":"Краткий анализ","recommendedActivities":[{"format":"quest","activityId":12,"action":"promote","rationale":"Охват 40.2% при 74 участниках","expectedImpact":"Ожидаемый эффект"}],"dataLimitations":["Ограничение"]}
             """;
     }
 
     /// <summary>Промпт для рекомендаций по каталогу наград.</summary>
     /// <param name="digest">Сводка спроса, рассчитанная Backend-ом.</param>
     /// <param name="notes">Пожелания мерчандайзера.</param>
-    /// <param name="productIdeas">Сколько идей товаров запросить.</param>
+    /// <param name="maxProducts">Максимальное количество рекомендаций.</param>
     /// <returns>Пользовательский промпт.</returns>
     public static string ProductRecommendations(
         string digest,
         string? notes,
-        int productIdeas)
+        int maxProducts)
     {
         return $$"""
-            Задача: проанализируй спрос в каталоге наград и предложи, что добавить или изменить.
+            Задача: проанализируй спрос в каталоге наград и порекомендуй действия
+            с уже существующими товарами.
 
-            Показатели, рассчитанные Backend-ом:
+            Показатели и существующие товары, рассчитанные Backend-ом:
             <statistics>
             {{digest}}
             </statistics>
@@ -403,16 +540,15 @@ public static class AiPromptBuilder
 
             Требования:
             - analysis: 2–5 предложений, только выводы из <statistics>;
-            - productIdeas: {{productIdeas}} идей; name до 80 символов, description 200–600 символов,
-              shortPitch до 200 символов, priceBand в баллах ("300–600" или "до 1000"),
-              rationale обязательно содержит показатель спроса, остатка или экономики баллов,
-              tags: 1–4 коротких тега;
-            - catalogActions: 3–5 управленческих действий по ассортименту, остаткам или ценам;
-            - не предлагай товары, которых в каталоге уже избыток, и не выдумывай бренды;
+            - recommendedProducts: не больше {{maxProducts}} записей;
+            - productId бери только из разделов с товарами выше;
+            - не придумывай товары, названия, идентификаторы и метрики;
+            - action: restock | reprice | promote | pause | bundle | replace;
+            - rationale обязательно содержит конкретное число из <statistics>;
             - dataLimitations: ограничения выборки.
 
             Верни только json:
-            {"analysis":"Краткий анализ","productIdeas":[{"name":"Название","category":"Категория","description":"Описание","shortPitch":"Короткая фраза","priceBand":"300–600","rationale":"Обоснование по числу","tags":["тег"]}],"catalogActions":["Действие"],"dataLimitations":["Ограничение"]}
+            {"analysis":"Краткий анализ","recommendedProducts":[{"productId":34,"action":"restock","rationale":"Остаток 3 при 12 заказанных единицах","expectedImpact":"Ожидаемый эффект"}],"dataLimitations":["Ограничение"]}
             """;
     }
 
@@ -464,6 +600,9 @@ public static class AiPromptBuilder
 
     private static string Count(int? value) =>
         value is int count && count > 0 ? $"{count} человек" : NotSpecified;
+
+    private static string Stock(int? value) =>
+        value is int stock && stock >= 0 ? $"{stock} шт." : NotSpecified;
 
     private static string Questions(int? value) =>
         value is int count && count > 0 ? $"{count} вопросов" : NotSpecified;

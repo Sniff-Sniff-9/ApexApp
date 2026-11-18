@@ -212,12 +212,12 @@ public static class AiContentValidator
     /// <param name="items">Варианты из ответа модели.</param>
     /// <param name="max">Максимальное количество.</param>
     /// <returns>Пригодные варианты.</returns>
-    public static IReadOnlyList<QuestDraft> QuestDrafts(
+    public static IReadOnlyList<QuestTextDraft> QuestDrafts(
         IEnumerable<QuestDraftPayload>? items,
         int max)
     {
         var limit = Math.Clamp(max, 1, MaxVariants);
-        var result = new List<QuestDraft>(limit);
+        var result = new List<QuestTextDraft>(limit);
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var item in items ?? [])
@@ -235,7 +235,7 @@ public static class AiContentValidator
                 continue;
             }
 
-            result.Add(new QuestDraft(name, description));
+            result.Add(new QuestTextDraft(name, description));
 
             if (result.Count >= limit)
             {
@@ -282,9 +282,7 @@ public static class AiContentValidator
             }
 
             var completionType = CompletionType(item.CompletionType);
-            string? actionType = null;
-            long? targetId = null;
-            string? achievementCode = null;
+            QuestStepActionDraft? action = null;
             var needsConfiguration = false;
 
             if (completionType == "automatic")
@@ -293,17 +291,13 @@ public static class AiContentValidator
                     || !TryResolveAction(
                         item,
                         candidates,
-                        out actionType,
-                        out targetId,
-                        out achievementCode,
+                        out action,
                         out needsConfiguration))
                 {
                     // Неизвестное или недоступное действие не пробрасывается в админку:
                     // шаг становится ручным.
                     completionType = "manual";
-                    actionType = null;
-                    targetId = null;
-                    achievementCode = null;
+                    action = null;
                     needsConfiguration = false;
                 }
             }
@@ -312,10 +306,10 @@ public static class AiContentValidator
                 title,
                 description,
                 completionType,
+                result.Count,
                 item.IsRequired,
-                actionType,
-                targetId,
-                achievementCode,
+                action,
+                null,
                 needsConfiguration));
 
             if (result.Count >= limit)
@@ -330,14 +324,10 @@ public static class AiContentValidator
     private static bool TryResolveAction(
         QuestStepPayload item,
         QuestStepActionCandidateSets? candidates,
-        out string? actionType,
-        out long? targetId,
-        out string? achievementCode,
+        out QuestStepActionDraft? action,
         out bool needsConfiguration)
     {
-        actionType = null;
-        targetId = null;
-        achievementCode = null;
+        action = null;
         needsConfiguration = false;
 
         var template = QuestStepActionRegistry.Find(item.ActionType);
@@ -347,44 +337,124 @@ public static class AiContentValidator
             return false;
         }
 
-        actionType = template.Code;
+        long? targetId = null;
+        string? achievementCode = null;
+        long? productId = null;
+        long? minAmount = null;
+        int? count = null;
+        bool? requireAvatar = null;
 
-        var requiresTarget = template.Parameters.Any(parameter =>
-            string.Equals(parameter.Name, "targetId", StringComparison.Ordinal));
-
-        if (requiresTarget)
+        switch (template.Code)
         {
-            var allowed = AllowedTargets(template.Code, candidates);
+            case QuestStepActionCodes.CompleteQuest:
+            case QuestStepActionCodes.CompleteSurvey:
+            case QuestStepActionCodes.AttendEvent:
+            {
+                var allowed = AllowedTargets(template.Code, candidates);
 
-            if (item.TargetId is long id && allowed.Contains(id))
-            {
-                targetId = id;
+                if (item.TargetId is long id && allowed.Contains(id))
+                {
+                    targetId = id;
+                }
+                else
+                {
+                    needsConfiguration = true;
+                }
+
+                break;
             }
-            else
+
+            case QuestStepActionCodes.EarnAchievement:
             {
-                needsConfiguration = true;
+                var allowed = candidates is null
+                    ? []
+                    : candidates.Achievements
+                        .Select(option => option.Id)
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                var code = item.AchievementCode?.Trim();
+
+                if (!string.IsNullOrWhiteSpace(code) && allowed.Contains(code))
+                {
+                    achievementCode = code;
+                }
+                else
+                {
+                    needsConfiguration = true;
+                }
+
+                break;
+            }
+
+            case QuestStepActionCodes.MakePurchase:
+            {
+                var allowedProducts = AllowedProducts(candidates);
+
+                if (item.ProductId is long requestedProduct)
+                {
+                    if (allowedProducts.Contains(requestedProduct))
+                    {
+                        productId = requestedProduct;
+                    }
+                    else
+                    {
+                        needsConfiguration = true;
+                    }
+                }
+
+                if (item.MinAmount is long requestedAmount)
+                {
+                    if (requestedAmount >= 0)
+                    {
+                        minAmount = requestedAmount;
+                    }
+                    else
+                    {
+                        needsConfiguration = true;
+                    }
+                }
+
+                break;
+            }
+
+            case QuestStepActionCodes.SendThanks:
+            case QuestStepActionCodes.ReceiveThanks:
+            {
+                var requestedCount = item.Count ?? 1;
+
+                if (requestedCount < 1)
+                {
+                    needsConfiguration = true;
+                    requestedCount = 1;
+                }
+
+                count = requestedCount;
+                break;
+            }
+
+            case QuestStepActionCodes.CompleteProfile:
+            {
+                var requestedAvatar = item.RequireAvatar ?? true;
+
+                if (!requestedAvatar)
+                {
+                    needsConfiguration = true;
+                    requestedAvatar = true;
+                }
+
+                requireAvatar = requestedAvatar;
+                break;
             }
         }
 
-        if (template.Code == QuestStepActionCodes.EarnAchievement)
-        {
-            var allowed = candidates is null
-                ? []
-                : candidates.Achievements
-                    .Select(option => option.Id)
-                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-            var code = item.AchievementCode?.Trim();
-
-            if (!string.IsNullOrWhiteSpace(code) && allowed.Contains(code))
-            {
-                achievementCode = code;
-            }
-            else
-            {
-                needsConfiguration = true;
-            }
-        }
+        action = new QuestStepActionDraft(
+            template.Code,
+            targetId,
+            achievementCode,
+            productId,
+            minAmount,
+            count,
+            requireAvatar);
 
         return true;
     }
@@ -401,14 +471,17 @@ public static class AiContentValidator
             _ => null
         };
 
-        if (options is null)
-        {
-            return [];
-        }
+        return ParseIds(options);
+    }
 
+    private static HashSet<long> AllowedProducts(QuestStepActionCandidateSets? candidates) =>
+        ParseIds(candidates?.Products);
+
+    private static HashSet<long> ParseIds(IReadOnlyList<QuestStepActionOption>? options)
+    {
         var allowed = new HashSet<long>();
 
-        foreach (var option in options)
+        foreach (var option in options ?? [])
         {
             if (long.TryParse(option.Id, out var id) && id > 0)
             {
@@ -417,6 +490,224 @@ public static class AiContentValidator
         }
 
         return allowed;
+    }
+
+    /// <summary>
+    /// Проверяет полный черновик квеста: контент от модели, пользовательские поля из формы.
+    /// </summary>
+    /// <param name="payload">Ответ модели.</param>
+    /// <param name="request">Параметры запроса.</param>
+    /// <param name="candidates">Реальные объекты для автоматических шагов.</param>
+    /// <returns>Черновик или <c>null</c>, если контент непригоден.</returns>
+    public static QuestDraft? QuestActivityDraft(
+        QuestActivityDraftPayload? payload,
+        AiQuestActivityDraftRequest request,
+        QuestStepActionCandidateSets? candidates)
+    {
+        if (payload is null || request.RewardAmount is not long rewardAmount)
+        {
+            return null;
+        }
+
+        var title = Text(payload.Title, TitleMaxLength);
+        var description = Text(payload.Description, DescriptionMaxLength);
+
+        if (title is null)
+        {
+            return null;
+        }
+
+        var steps = QuestSteps(
+                payload.Steps,
+                request.StepsCount,
+                candidates,
+                request.AllowAutomatic)
+            .ToList();
+
+        if (steps.Count == 0)
+        {
+            return null;
+        }
+
+        if (!steps.Any(step => step.IsRequired))
+        {
+            steps[0] = steps[0] with { IsRequired = true };
+        }
+
+        return new QuestDraft(
+            title,
+            description,
+            rewardAmount,
+            request.StartAt,
+            request.EndAt,
+            request.IsActive,
+            steps);
+    }
+
+    /// <summary>
+    /// Проверяет полный черновик мероприятия: контент от модели, пользовательские поля из формы.
+    /// </summary>
+    /// <param name="payload">Ответ модели.</param>
+    /// <param name="request">Параметры запроса.</param>
+    /// <returns>Черновик или <c>null</c>.</returns>
+    public static EventDraft? EventActivityDraft(
+        EventActivityDraftPayload? payload,
+        AiEventActivityDraftRequest request)
+    {
+        if (payload is null
+            || request.StartAt is not DateTime startAt
+            || request.EndAt is not DateTime endAt
+            || request.RewardAmount is not long rewardAmount)
+        {
+            return null;
+        }
+
+        var title = Text(payload.Title, TitleMaxLength);
+        var description = Text(payload.Description, DescriptionMaxLength);
+
+        if (title is null)
+        {
+            return null;
+        }
+
+        return new EventDraft(
+            title,
+            description,
+            startAt,
+            endAt,
+            request.Location,
+            request.MaxParticipants,
+            rewardAmount,
+            request.IsActive);
+    }
+
+    /// <summary>
+    /// Проверяет полный черновик анкеты: контент от модели, пользовательские поля из формы.
+    /// </summary>
+    /// <param name="payload">Ответ модели.</param>
+    /// <param name="request">Параметры запроса.</param>
+    /// <returns>Черновик или <c>null</c>.</returns>
+    public static SurveyDraft? SurveyActivityDraft(
+        SurveyActivityDraftPayload? payload,
+        AiSurveyActivityDraftRequest request)
+    {
+        if (payload is null || request.RewardAmount is not long rewardAmount)
+        {
+            return null;
+        }
+
+        var title = Text(payload.Title, TitleMaxLength);
+        var description = Text(payload.Description, DescriptionMaxLength);
+
+        if (title is null)
+        {
+            return null;
+        }
+
+        var questions = SurveyQuestions(payload.Questions, request.QuestionsCount).ToList();
+
+        if (questions.Count == 0)
+        {
+            return null;
+        }
+
+        return new SurveyDraft(
+            title,
+            description,
+            rewardAmount,
+            request.StartAt,
+            request.EndAt,
+            request.AllowMultipleResponses,
+            request.IsActive,
+            questions);
+    }
+
+    /// <summary>
+    /// Проверяет полный черновик товара: категория и цена разрешаются по реальным данным.
+    /// </summary>
+    /// <param name="payload">Ответ модели.</param>
+    /// <param name="request">Параметры запроса.</param>
+    /// <param name="allowedCategoryIds">Реальные идентификаторы категорий.</param>
+    /// <param name="referenceMin">Минимальная цена категории; необязательно.</param>
+    /// <param name="referenceMax">Максимальная цена категории; необязательно.</param>
+    /// <returns>Черновик или <c>null</c>, если модель выдумала категорию или цену.</returns>
+    public static ProductDraft? ProductActivityDraft(
+        ProductDraftPayload? payload,
+        AiProductDraftRequest request,
+        IReadOnlySet<int> allowedCategoryIds,
+        long? referenceMin = null,
+        long? referenceMax = null)
+    {
+        if (payload is null)
+        {
+            return null;
+        }
+
+        var name = Text(payload.Name, TitleMaxLength);
+        var description = Text(payload.Description, DescriptionMaxLength);
+
+        if (name is null)
+        {
+            return null;
+        }
+
+        int? categoryId;
+        var changedCategory = false;
+
+        if (payload.CategoryId is int modelCategoryId)
+        {
+            if (!allowedCategoryIds.Contains(modelCategoryId))
+            {
+                return null;
+            }
+
+            categoryId = modelCategoryId;
+            changedCategory = modelCategoryId != request.CategoryId;
+        }
+        else
+        {
+            categoryId = request.CategoryId;
+        }
+
+        long price;
+        string source;
+        var requiresConfirmation = false;
+
+        if (request.Price is long userPrice)
+        {
+            if (userPrice < 0)
+            {
+                return null;
+            }
+
+            price = userPrice;
+            source = "user";
+        }
+        else if (payload.Price is long modelPrice && modelPrice >= 0)
+        {
+            price = modelPrice;
+            source = "ai";
+            requiresConfirmation = true;
+        }
+        else
+        {
+            return null;
+        }
+
+        return new ProductDraft(
+            categoryId,
+            name,
+            description,
+            price,
+            new PriceProvenance(
+                source,
+                requiresConfirmation,
+                changedCategory ? null : referenceMin,
+                changedCategory ? null : referenceMax),
+            request.ImageUrl,
+            request.Stock,
+            request.IsActive,
+            false);
     }
 
     /// <summary>Проверяет и нормализует анонсы мероприятий.</summary>
@@ -508,12 +799,12 @@ public static class AiContentValidator
     /// <param name="items">Варианты из ответа модели.</param>
     /// <param name="max">Максимальное количество.</param>
     /// <returns>Пригодные варианты.</returns>
-    public static IReadOnlyList<SurveyDraft> SurveyDrafts(
+    public static IReadOnlyList<SurveyTextDraft> SurveyDrafts(
         IEnumerable<SurveyDraftPayload>? items,
         int max)
     {
         var limit = Math.Clamp(max, 1, MaxVariants);
-        var result = new List<SurveyDraft>(limit);
+        var result = new List<SurveyTextDraft>(limit);
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var item in items ?? [])
@@ -531,7 +822,7 @@ public static class AiContentValidator
                 continue;
             }
 
-            result.Add(new SurveyDraft(title, description));
+            result.Add(new SurveyTextDraft(title, description));
 
             if (result.Count >= limit)
             {
@@ -590,6 +881,7 @@ public static class AiContentValidator
                 questionText,
                 questionType,
                 options,
+                result.Count,
                 item.IsRequired));
 
             if (result.Count >= limit)

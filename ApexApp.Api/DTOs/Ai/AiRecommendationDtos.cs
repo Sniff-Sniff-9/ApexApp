@@ -67,6 +67,46 @@ public sealed record AiFormatSummaryDto(
             format.IsReliable);
 }
 
+/// <summary>Существующая активность, переданная модели.</summary>
+/// <param name="Format">Формат.</param>
+/// <param name="Id">Идентификатор.</param>
+/// <param name="Title">Название.</param>
+/// <param name="IsActive">Признак активности.</param>
+/// <param name="Participants">Участники.</param>
+/// <param name="Completed">Завершения.</param>
+/// <param name="CompletionRate">Доля завершения.</param>
+/// <param name="RewardAmount">Награда.</param>
+/// <param name="StartsAt">Начало.</param>
+/// <param name="EndsAt">Окончание.</param>
+public sealed record AiActivitySummaryDto(
+    string Format,
+    long Id,
+    string Title,
+    bool IsActive,
+    long Participants,
+    long Completed,
+    double? CompletionRate,
+    long RewardAmount,
+    DateTime? StartsAt,
+    DateTime? EndsAt)
+{
+    /// <summary>Создаёт DTO из строки активности.</summary>
+    /// <param name="activity">Строка активности.</param>
+    /// <returns>DTO активности.</returns>
+    public static AiActivitySummaryDto From(AiActivityRow activity) =>
+        new(
+            activity.Format,
+            activity.Id,
+            activity.Title,
+            activity.IsActive,
+            activity.Participants,
+            activity.Completed,
+            activity.CompletionRate,
+            activity.RewardAmount,
+            activity.StartsAt,
+            activity.EndsAt);
+}
+
 /// <summary>Показатели вовлечённости, переданные модели.</summary>
 /// <param name="Period">Описание окна расчёта.</param>
 /// <param name="ActiveEmployees">Активные сотрудники.</param>
@@ -104,65 +144,47 @@ public sealed record EngagementSummaryDto(
             snapshot.Formats.Select(AiFormatSummaryDto.From).ToList());
 }
 
-/// <summary>Идея активности.</summary>
-/// <param name="Kind">Формат активности.</param>
-/// <param name="Title">Название.</param>
-/// <param name="Description">Описание.</param>
-/// <param name="WhyItFits">Почему идея подходит данным.</param>
-/// <param name="Effort">Трудоёмкость.</param>
+/// <summary>Рекомендация существующей активности.</summary>
+/// <param name="Format">Формат.</param>
+/// <param name="ActivityId">Идентификатор существующей активности.</param>
+/// <param name="Title">Название из базы.</param>
+/// <param name="Action">Рекомендуемое действие.</param>
+/// <param name="Rationale">Обоснование по реальным показателям.</param>
 /// <param name="ExpectedImpact">Ожидаемый эффект.</param>
-public sealed record ActivityIdeaDto(
-    string Kind,
+public sealed record ActivityRecommendationDto(
+    string Format,
+    long ActivityId,
     string Title,
-    string Description,
-    string WhyItFits,
-    string Effort,
+    string Action,
+    string Rationale,
     string ExpectedImpact)
 {
-    /// <summary>Создаёт DTO из идеи.</summary>
-    /// <param name="idea">Идея активности.</param>
-    /// <returns>DTO идеи.</returns>
-    public static ActivityIdeaDto From(ActivityIdea idea) =>
+    /// <summary>Создаёт DTO из рекомендации.</summary>
+    /// <param name="recommendation">Рекомендация.</param>
+    /// <returns>DTO рекомендации.</returns>
+    public static ActivityRecommendationDto From(ActivityRecommendation recommendation) =>
         new(
-            idea.Kind,
-            idea.Title,
-            idea.Description,
-            idea.WhyItFits,
-            idea.Effort,
-            idea.ExpectedImpact);
-}
-
-/// <summary>Идея награды.</summary>
-/// <param name="Title">Название.</param>
-/// <param name="Description">Описание.</param>
-/// <param name="Rationale">Обоснование по данным.</param>
-/// <param name="SuggestedPriceBand">Ориентировочный диапазон цены в баллах.</param>
-public sealed record RewardIdeaDto(
-    string Title,
-    string Description,
-    string Rationale,
-    string? SuggestedPriceBand)
-{
-    /// <summary>Создаёт DTO из идеи награды.</summary>
-    /// <param name="idea">Идея награды.</param>
-    /// <returns>DTO идеи.</returns>
-    public static RewardIdeaDto From(RewardIdea idea) =>
-        new(idea.Title, idea.Description, idea.Rationale, idea.SuggestedPriceBand);
+            recommendation.Format,
+            recommendation.ActivityId,
+            recommendation.Title,
+            recommendation.Action,
+            recommendation.Rationale,
+            recommendation.ExpectedImpact);
 }
 
 /// <summary>Отчёт рекомендаций по вовлечённости.</summary>
 /// <param name="Engagement">Показатели, переданные модели.</param>
+/// <param name="Activities">Существующие активности.</param>
 /// <param name="Analysis">Краткий анализ.</param>
 /// <param name="Findings">Наблюдения правил.</param>
-/// <param name="ActivityIdeas">Идеи активностей.</param>
-/// <param name="RewardIdeas">Идеи наград.</param>
+/// <param name="RecommendedActivities">Рекомендации существующих активностей.</param>
 /// <param name="Limitations">Ограничения интерпретации.</param>
 public sealed record EngagementRecommendationDto(
     EngagementSummaryDto Engagement,
+    IReadOnlyList<AiActivitySummaryDto> Activities,
     string Analysis,
     IReadOnlyList<AiFindingDto> Findings,
-    IReadOnlyList<ActivityIdeaDto> ActivityIdeas,
-    IReadOnlyList<RewardIdeaDto> RewardIdeas,
+    IReadOnlyList<ActivityRecommendationDto> RecommendedActivities,
     IReadOnlyList<string> Limitations)
 {
     /// <summary>Создаёт DTO из отчёта сервиса.</summary>
@@ -171,9 +193,9 @@ public sealed record EngagementRecommendationDto(
     public static EngagementRecommendationDto From(EngagementRecommendationReport report) =>
         new(
             EngagementSummaryDto.From(report.Engagement),
+            report.Activities.Select(AiActivitySummaryDto.From).ToList(),
             report.Analysis,
             report.Findings.Select(AiFindingDto.From).ToList(),
-            report.ActivityIdeas.Select(ActivityIdeaDto.From).ToList(),
-            report.RewardIdeas.Select(RewardIdeaDto.From).ToList(),
+            report.RecommendedActivities.Select(ActivityRecommendationDto.From).ToList(),
             report.Limitations);
 }

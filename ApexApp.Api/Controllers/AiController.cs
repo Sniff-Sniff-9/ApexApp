@@ -73,8 +73,8 @@ public sealed class AiController(
     /// <response code="503">Модуль не настроен.</response>
     /// <response code="504">Провайдер не ответил вовремя.</response>
     [HttpPost("content/quest-drafts")]
-    [Authorize(Policy = AppPolicies.UseAiContent)]
-    [ProducesResponseType(typeof(AiResultDto<IReadOnlyList<QuestDraftDto>>), StatusCodes.Status200OK)]
+    [Authorize(Policy = AppPolicies.ManageActivities)]
+    [ProducesResponseType(typeof(AiResultDto<IReadOnlyList<QuestTextDraftDto>>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -82,7 +82,7 @@ public sealed class AiController(
     [ProducesResponseType(StatusCodes.Status502BadGateway)]
     [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
     [ProducesResponseType(StatusCodes.Status504GatewayTimeout)]
-    public async Task<ActionResult<AiResultDto<IReadOnlyList<QuestDraftDto>>>> GenerateQuestDrafts(
+    public async Task<ActionResult<AiResultDto<IReadOnlyList<QuestTextDraftDto>>>> GenerateQuestDrafts(
         [FromBody] GenerateQuestDraftRequest request,
         CancellationToken cancellationToken)
     {
@@ -109,8 +109,210 @@ public sealed class AiController(
             return ToErrorResult(result.StatusCode, result.Error);
         }
 
-        return Ok(AiResultDto<IReadOnlyList<QuestDraftDto>>.Create(
-            result.Value!.Content.Select(QuestDraftDto.From).ToList(),
+        return Ok(AiResultDto<IReadOnlyList<QuestTextDraftDto>>.Create(
+            result.Value!.Content.Select(QuestTextDraftDto.From).ToList(),
+            result.Value!.Meta));
+    }
+
+    /// <summary>
+    /// Полный черновик квеста по свободному промпту.
+    /// </summary>
+    /// <param name="request">Параметры генерации.</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    /// <returns>Черновик, совместимый с созданием квеста.</returns>
+    [HttpPost("content/activity-draft/quest")]
+    [Authorize(Policy = AppPolicies.ManageActivities)]
+    [ProducesResponseType(typeof(AiResultDto<QuestDraftDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    [ProducesResponseType(StatusCodes.Status504GatewayTimeout)]
+    public async Task<ActionResult<AiResultDto<QuestDraftDto>>> GenerateQuestActivityDraft(
+        [FromBody] GenerateQuestActivityDraftRequest request,
+        CancellationToken cancellationToken)
+    {
+        var adminId = User.GetUserId();
+
+        if (adminId is null)
+        {
+            return Unauthorized();
+        }
+
+        var result = await contentService.GenerateQuestActivityDraftAsync(
+            new AiQuestActivityDraftRequest(
+                request.Prompt,
+                request.RewardAmount,
+                request.StartAt,
+                request.EndAt,
+                request.IsActive,
+                request.StepsCount,
+                request.AllowAutomatic,
+                request.Audience,
+                request.Tone),
+            adminId.Value,
+            cancellationToken);
+
+        if (!result.IsSuccess)
+        {
+            return ToErrorResult(result.StatusCode, result.Error);
+        }
+
+        return Ok(AiResultDto<QuestDraftDto>.Create(
+            QuestDraftDto.From(result.Value!.Content),
+            result.Value!.Meta));
+    }
+
+    /// <summary>
+    /// Полный черновик мероприятия по свободному промпту.
+    /// </summary>
+    /// <param name="request">Параметры генерации.</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    /// <returns>Черновик, совместимый с созданием мероприятия.</returns>
+    [HttpPost("content/activity-draft/event")]
+    [Authorize(Policy = AppPolicies.ManageActivities)]
+    [ProducesResponseType(typeof(AiResultDto<EventDraftDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    [ProducesResponseType(StatusCodes.Status504GatewayTimeout)]
+    public async Task<ActionResult<AiResultDto<EventDraftDto>>> GenerateEventActivityDraft(
+        [FromBody] GenerateEventActivityDraftRequest request,
+        CancellationToken cancellationToken)
+    {
+        var adminId = User.GetUserId();
+
+        if (adminId is null)
+        {
+            return Unauthorized();
+        }
+
+        var result = await contentService.GenerateEventActivityDraftAsync(
+            new AiEventActivityDraftRequest(
+                request.Prompt,
+                request.StartAt,
+                request.EndAt,
+                request.RewardAmount,
+                request.Location,
+                request.MaxParticipants,
+                request.IsActive,
+                request.Audience,
+                request.Tone),
+            adminId.Value,
+            cancellationToken);
+
+        if (!result.IsSuccess)
+        {
+            return ToErrorResult(result.StatusCode, result.Error);
+        }
+
+        return Ok(AiResultDto<EventDraftDto>.Create(
+            EventDraftDto.From(result.Value!.Content),
+            result.Value!.Meta));
+    }
+
+    /// <summary>
+    /// Полный черновик анкеты по свободному промпту.
+    /// </summary>
+    /// <param name="request">Параметры генерации.</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    /// <returns>Черновик, совместимый с созданием анкеты.</returns>
+    [HttpPost("content/activity-draft/survey")]
+    [Authorize(Policy = AppPolicies.ManageActivities)]
+    [ProducesResponseType(typeof(AiResultDto<SurveyDraftDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    [ProducesResponseType(StatusCodes.Status504GatewayTimeout)]
+    public async Task<ActionResult<AiResultDto<SurveyDraftDto>>> GenerateSurveyActivityDraft(
+        [FromBody] GenerateSurveyActivityDraftRequest request,
+        CancellationToken cancellationToken)
+    {
+        var adminId = User.GetUserId();
+
+        if (adminId is null)
+        {
+            return Unauthorized();
+        }
+
+        var result = await contentService.GenerateSurveyActivityDraftAsync(
+            new AiSurveyActivityDraftRequest(
+                request.Prompt,
+                request.RewardAmount,
+                request.StartAt,
+                request.EndAt,
+                request.AllowMultipleResponses,
+                request.IsActive,
+                request.QuestionsCount,
+                request.Audience,
+                request.Tone),
+            adminId.Value,
+            cancellationToken);
+
+        if (!result.IsSuccess)
+        {
+            return ToErrorResult(result.StatusCode, result.Error);
+        }
+
+        return Ok(AiResultDto<SurveyDraftDto>.Create(
+            SurveyDraftDto.From(result.Value!.Content),
+            result.Value!.Meta));
+    }
+
+    /// <summary>
+    /// Полный черновик товара по свободному промпту.
+    /// </summary>
+    /// <param name="request">Параметры генерации.</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    /// <returns>Черновик, совместимый с созданием товара.</returns>
+    [HttpPost("content/product-draft")]
+    [Authorize(Policy = AppPolicies.ManageCatalog)]
+    [ProducesResponseType(typeof(AiResultDto<ProductDraftDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    [ProducesResponseType(StatusCodes.Status504GatewayTimeout)]
+    public async Task<ActionResult<AiResultDto<ProductDraftDto>>> GenerateProductDraft(
+        [FromBody] GenerateProductDraftRequest request,
+        CancellationToken cancellationToken)
+    {
+        var adminId = User.GetUserId();
+
+        if (adminId is null)
+        {
+            return Unauthorized();
+        }
+
+        var result = await contentService.GenerateProductDraftAsync(
+            new AiProductDraftRequest(
+                request.Prompt,
+                request.CategoryId,
+                request.Price,
+                request.Stock,
+                request.ImageUrl,
+                request.IsActive,
+                request.Tone),
+            adminId.Value,
+            cancellationToken);
+
+        if (!result.IsSuccess)
+        {
+            return ToErrorResult(result.StatusCode, result.Error);
+        }
+
+        return Ok(AiResultDto<ProductDraftDto>.Create(
+            ProductDraftDto.From(result.Value!.Content),
             result.Value!.Meta));
     }
 
@@ -129,7 +331,7 @@ public sealed class AiController(
     /// <response code="503">Модуль не настроен.</response>
     /// <response code="504">Провайдер не ответил вовремя.</response>
     [HttpPost("content/quest-steps")]
-    [Authorize(Policy = AppPolicies.UseAiContent)]
+    [Authorize(Policy = AppPolicies.ManageActivities)]
     [ProducesResponseType(typeof(AiResultDto<IReadOnlyList<QuestStepDraftDto>>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -184,8 +386,8 @@ public sealed class AiController(
     /// <response code="503">Модуль не настроен.</response>
     /// <response code="504">Провайдер не ответил вовремя.</response>
     [HttpPost("content/survey-draft")]
-    [Authorize(Policy = AppPolicies.UseAiContent)]
-    [ProducesResponseType(typeof(AiResultDto<IReadOnlyList<SurveyDraftDto>>), StatusCodes.Status200OK)]
+    [Authorize(Policy = AppPolicies.ManageActivities)]
+    [ProducesResponseType(typeof(AiResultDto<IReadOnlyList<SurveyTextDraftDto>>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -193,7 +395,7 @@ public sealed class AiController(
     [ProducesResponseType(StatusCodes.Status502BadGateway)]
     [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
     [ProducesResponseType(StatusCodes.Status504GatewayTimeout)]
-    public async Task<ActionResult<AiResultDto<IReadOnlyList<SurveyDraftDto>>>> GenerateSurveyDraft(
+    public async Task<ActionResult<AiResultDto<IReadOnlyList<SurveyTextDraftDto>>>> GenerateSurveyDraft(
         [FromBody] GenerateSurveyDraftRequest request,
         CancellationToken cancellationToken)
     {
@@ -220,8 +422,8 @@ public sealed class AiController(
             return ToErrorResult(result.StatusCode, result.Error);
         }
 
-        return Ok(AiResultDto<IReadOnlyList<SurveyDraftDto>>.Create(
-            result.Value!.Content.Select(SurveyDraftDto.From).ToList(),
+        return Ok(AiResultDto<IReadOnlyList<SurveyTextDraftDto>>.Create(
+            result.Value!.Content.Select(SurveyTextDraftDto.From).ToList(),
             result.Value!.Meta));
     }
 
@@ -240,7 +442,7 @@ public sealed class AiController(
     /// <response code="503">Модуль не настроен.</response>
     /// <response code="504">Провайдер не ответил вовремя.</response>
     [HttpPost("content/survey-questions")]
-    [Authorize(Policy = AppPolicies.UseAiContent)]
+    [Authorize(Policy = AppPolicies.ManageActivities)]
     [ProducesResponseType(typeof(AiResultDto<IReadOnlyList<SurveyQuestionDraftDto>>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -294,7 +496,7 @@ public sealed class AiController(
     /// <response code="503">Модуль не настроен.</response>
     /// <response code="504">Провайдер не ответил вовремя.</response>
     [HttpPost("content/event-announcement")]
-    [Authorize(Policy = AppPolicies.UseAiContent)]
+    [Authorize(Policy = AppPolicies.ManageActivities)]
     [ProducesResponseType(typeof(AiResultDto<IReadOnlyList<EventAnnouncementDto>>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -543,9 +745,9 @@ public sealed class AiController(
             return ToErrorResult(scope.StatusCode, scope.Error);
         }
 
-        if (!AiRecommendationFocusCodes.TryParse(request.Focus, out var focus))
+        if (!AiRecommendationFocusCodes.IsSupported(request.Focus))
         {
-            return BadRequest(new { message = "Focus must be one of: all, activities, rewards." });
+            return BadRequest(new { message = "Focus must be one of: all, activities." });
         }
 
         if (!TryCreateQuery(
@@ -561,7 +763,7 @@ public sealed class AiController(
         }
 
         var result = await recommendationService.GetEngagementRecommendationsAsync(
-            new AiEngagementRecommendationCommand(query, focus, request.Notes),
+            new AiEngagementRecommendationCommand(query, request.Notes),
             adminId.Value,
             cancellationToken);
 

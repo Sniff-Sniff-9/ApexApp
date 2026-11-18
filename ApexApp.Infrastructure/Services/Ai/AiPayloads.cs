@@ -45,8 +45,72 @@ public sealed class QuestStepPayload
     /// <summary>Код достижения из списка Backend-а.</summary>
     public string? AchievementCode { get; set; }
 
+    /// <summary>Товар для <c>make_purchase</c> из списка Backend-а.</summary>
+    public long? ProductId { get; set; }
+
+    /// <summary>Минимальная сумма заказа для <c>make_purchase</c>.</summary>
+    public long? MinAmount { get; set; }
+
+    /// <summary>Количество благодарностей для <c>send_thanks</c>/<c>receive_thanks</c>.</summary>
+    public int? Count { get; set; }
+
+    /// <summary>Требование аватара для <c>complete_profile</c>.</summary>
+    public bool? RequireAvatar { get; set; }
+
     /// <summary>Признак обязательного шага.</summary>
     public bool IsRequired { get; set; }
+}
+
+/// <summary>Транспортная модель ответа: полный черновик квеста.</summary>
+public sealed class QuestActivityDraftPayload
+{
+    /// <summary>Название.</summary>
+    public string? Title { get; set; }
+
+    /// <summary>Описание.</summary>
+    public string? Description { get; set; }
+
+    /// <summary>Шаги.</summary>
+    public List<QuestStepPayload>? Steps { get; set; }
+}
+
+/// <summary>Транспортная модель ответа: полный черновик мероприятия.</summary>
+public sealed class EventActivityDraftPayload
+{
+    /// <summary>Название.</summary>
+    public string? Title { get; set; }
+
+    /// <summary>Описание.</summary>
+    public string? Description { get; set; }
+}
+
+/// <summary>Транспортная модель ответа: полный черновик анкеты.</summary>
+public sealed class SurveyActivityDraftPayload
+{
+    /// <summary>Название.</summary>
+    public string? Title { get; set; }
+
+    /// <summary>Описание.</summary>
+    public string? Description { get; set; }
+
+    /// <summary>Вопросы.</summary>
+    public List<SurveyQuestionPayload>? Questions { get; set; }
+}
+
+/// <summary>Транспортная модель ответа: полный черновик товара.</summary>
+public sealed class ProductDraftPayload
+{
+    /// <summary>Название.</summary>
+    public string? Name { get; set; }
+
+    /// <summary>Описание.</summary>
+    public string? Description { get; set; }
+
+    /// <summary>Цена в баллах, предложенная моделью.</summary>
+    public long? Price { get; set; }
+
+    /// <summary>Категория из списка Backend-а.</summary>
+    public int? CategoryId { get; set; }
 }
 
 /// <summary>Транспортная модель ответа: варианты названия и описания анкеты.</summary>
@@ -168,52 +232,30 @@ public sealed class EngagementRecommendationsPayload
     /// <summary>Краткий анализ.</summary>
     public string? Analysis { get; set; }
 
-    /// <summary>Идеи активностей.</summary>
-    public List<ActivityIdeaPayload>? ActivityIdeas { get; set; }
-
-    /// <summary>Идеи наград.</summary>
-    public List<RewardIdeaPayload>? RewardIdeas { get; set; }
+    /// <summary>Рекомендации существующих активностей.</summary>
+    public List<ActivityRecommendationPayload>? RecommendedActivities { get; set; }
 
     /// <summary>Ограничения данных, о которых предупреждает модель.</summary>
     public List<string>? DataLimitations { get; set; }
 }
 
-/// <summary>Транспортная модель идеи активности.</summary>
-public sealed class ActivityIdeaPayload
+/// <summary>Транспортная модель рекомендации существующей активности.</summary>
+public sealed class ActivityRecommendationPayload
 {
-    /// <summary>Формат: <c>quest</c>, <c>mini_game</c>, <c>competition</c>, <c>event</c> или <c>survey</c>.</summary>
-    public string? Kind { get; set; }
+    /// <summary>Формат: <c>event</c>, <c>quest</c> или <c>survey</c>.</summary>
+    public string? Format { get; set; }
 
-    /// <summary>Название идеи.</summary>
-    public string? Title { get; set; }
+    /// <summary>Идентификатор существующей активности.</summary>
+    public long? ActivityId { get; set; }
 
-    /// <summary>Описание.</summary>
-    public string? Description { get; set; }
+    /// <summary>Рекомендуемое действие.</summary>
+    public string? Action { get; set; }
 
-    /// <summary>Почему идея подходит данным.</summary>
-    public string? WhyItFits { get; set; }
-
-    /// <summary>Трудоёмкость: <c>low</c>, <c>medium</c> или <c>high</c>.</summary>
-    public string? Effort { get; set; }
+    /// <summary>Обоснование по реальным показателям.</summary>
+    public string? Rationale { get; set; }
 
     /// <summary>Ожидаемый эффект.</summary>
     public string? ExpectedImpact { get; set; }
-}
-
-/// <summary>Транспортная модель идеи награды.</summary>
-public sealed class RewardIdeaPayload
-{
-    /// <summary>Название.</summary>
-    public string? Title { get; set; }
-
-    /// <summary>Описание.</summary>
-    public string? Description { get; set; }
-
-    /// <summary>Обоснование по данным.</summary>
-    public string? Rationale { get; set; }
-
-    /// <summary>Ориентировочный диапазон цены в баллах.</summary>
-    public string? SuggestedPriceBand { get; set; }
 }
 
 /// <summary>Транспортная модель ответа: рекомендации по каталогу наград.</summary>
@@ -222,37 +264,25 @@ public sealed class ProductRecommendationsPayload
     /// <summary>Краткий анализ спроса.</summary>
     public string? Analysis { get; set; }
 
-    /// <summary>Идеи товаров.</summary>
-    public List<ProductIdeaPayload>? ProductIdeas { get; set; }
-
-    /// <summary>Действия по каталогу.</summary>
-    public List<string>? CatalogActions { get; set; }
+    /// <summary>Рекомендации существующих товаров.</summary>
+    public List<ProductRecommendationPayload>? RecommendedProducts { get; set; }
 
     /// <summary>Ограничения данных, о которых предупреждает модель.</summary>
     public List<string>? DataLimitations { get; set; }
 }
 
-/// <summary>Транспортная модель идеи товара.</summary>
-public sealed class ProductIdeaPayload
+/// <summary>Транспортная модель рекомендации существующего товара.</summary>
+public sealed class ProductRecommendationPayload
 {
-    /// <summary>Название.</summary>
-    public string? Name { get; set; }
+    /// <summary>Идентификатор существующего товара.</summary>
+    public int? ProductId { get; set; }
 
-    /// <summary>Категория.</summary>
-    public string? Category { get; set; }
+    /// <summary>Рекомендуемое действие.</summary>
+    public string? Action { get; set; }
 
-    /// <summary>Описание.</summary>
-    public string? Description { get; set; }
-
-    /// <summary>Короткий питч.</summary>
-    public string? ShortPitch { get; set; }
-
-    /// <summary>Ориентировочный диапазон цены в баллах.</summary>
-    public string? PriceBand { get; set; }
-
-    /// <summary>Обоснование по данным.</summary>
+    /// <summary>Обоснование по реальным показателям.</summary>
     public string? Rationale { get; set; }
 
-    /// <summary>Теги.</summary>
-    public List<string>? Tags { get; set; }
+    /// <summary>Ожидаемый эффект.</summary>
+    public string? ExpectedImpact { get; set; }
 }
