@@ -77,9 +77,10 @@ IConfiguration configuration,
 CancellationToken cancellationToken)
     {
         var supabaseUrl = configuration["Supabase:ProjectUrl"];
+        var supabaseAuthUrl = configuration["Supabase:AuthUrl"] ?? supabaseUrl;
         var supabaseKey = configuration["Supabase:AnonKey"];
 
-        if (string.IsNullOrWhiteSpace(supabaseUrl) ||
+        if (string.IsNullOrWhiteSpace(supabaseAuthUrl) ||
             string.IsNullOrWhiteSpace(supabaseKey))
         {
             return StatusCode(500, new { message = "Supabase configuration is missing." });
@@ -90,7 +91,7 @@ CancellationToken cancellationToken)
         client.DefaultRequestHeaders.Add("apikey", supabaseKey);
 
         using var response = await client.PostAsJsonAsync(
-            $"{supabaseUrl.TrimEnd('/')}/auth/v1/token?grant_type=password",
+            $"{supabaseAuthUrl.TrimEnd('/')}/auth/v1/token?grant_type=password",
             new { email = request.Email, password = request.Password },
             cancellationToken);
 
@@ -197,7 +198,8 @@ CancellationToken cancellationToken)
             .ToString()
             .Replace("Bearer ", "", StringComparison.OrdinalIgnoreCase);
 
-        var supabaseUrl = _configuration["Supabase:ProjectUrl"];
+        var supabaseUrl = _configuration["Supabase:AuthUrl"] ??
+            _configuration["Supabase:ProjectUrl"];
         var anonKey = _configuration["Supabase:AnonKey"];
 
         if (string.IsNullOrWhiteSpace(supabaseUrl) ||

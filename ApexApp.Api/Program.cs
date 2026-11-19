@@ -226,14 +226,13 @@ builder.Services.AddSwaggerGen(options =>
 
 var supabaseUrl = builder.Configuration["Supabase:ProjectUrl"] ??
     throw new InvalidOperationException("Supabase project URL is not configured.");
+var supabaseJwtJwks = builder.Configuration["Supabase:JwtJwks"];
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        options.Authority = $"{supabaseUrl}/auth/v1";
         options.Audience = "authenticated";
         options.MapInboundClaims = false;
-
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
@@ -242,8 +241,17 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidAudience = "authenticated",
             ValidateLifetime = true,
             NameClaimType = "sub",
-            RoleClaimType = "user_role"
+            RoleClaimType = "user_role",
+            IssuerSigningKeys = string.IsNullOrWhiteSpace(supabaseJwtJwks)
+                ? null
+                : new JsonWebKeySet(supabaseJwtJwks).GetSigningKeys()
         };
+        if (string.IsNullOrWhiteSpace(supabaseJwtJwks))
+        {
+            options.Authority = $"{supabaseUrl}/auth/v1";
+            // The IP-based test deployment is HTTP-only; require HTTPS metadata when configured for HTTPS.
+            options.RequireHttpsMetadata = !supabaseUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase);
+        }
     });
 
 builder.Services.AddHttpClient();
