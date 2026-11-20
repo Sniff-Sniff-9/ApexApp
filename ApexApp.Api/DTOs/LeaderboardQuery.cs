@@ -1,6 +1,11 @@
-﻿namespace ApexApp.Api.DTOs
+namespace ApexApp.Api.DTOs
 {
-    public sealed record LeaderboardQuery(
-    int Days = 30,
-    int Limit = 10);
+    /// <summary>
+    /// Параметры запроса лидерборда.
+    /// </summary>
+    public sealed class LeaderboardQuery
+    {
+        /// <summary>Максимальное число строк лидерборда (1–100).</summary>
+        public int Limit { get; set; } = 10;
+    }
 }

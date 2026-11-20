@@ -86,10 +86,9 @@ public static class CacheKeys
     public static string CompanyNews(int page, int pageSize) =>
         $"{CompanyNewsPrefix}list:{page}:{pageSize}";
 
-    /// <summary>Key for a leaderboard page.</summary>
-    /// <param name="days">Number of days in the ranking window.</param>
+    /// <summary>Key for a leaderboard page; the ranking window is the fixed engagement window.</summary>
     /// <param name="limit">Maximum number of entries.</param>
-    public static string Leaderboard(int days, int limit) => $"{LeaderboardPrefix}{days}:{limit}";
+    public static string Leaderboard(int limit) => $"{LeaderboardPrefix}top:{limit}";
 
     /// <summary>Key for aggregated survey results.</summary>
     /// <param name="surveyId">Survey identifier.</param>

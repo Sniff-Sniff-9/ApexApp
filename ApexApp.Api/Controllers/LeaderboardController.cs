@@ -1,4 +1,5 @@
-﻿using ApexApp.Api.Authorization;
+using ApexApp.Api.Authorization;
+using ApexApp.Api.DTOs;
 using ApexApp.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -21,21 +22,18 @@ public sealed class LeaderboardController: ApiControllerBase
         _leaderboardService = leaderboardService;
     }
 
+    /// <summary>
+    /// Возвращает лидерборд по баллу вовлечённости. Окно расчёта фиксировано
+    /// и совпадает с окном статуса вовлечённости сотрудника.
+    /// </summary>
+    /// <param name="query">Параметры лидерборда.</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
     [HttpGet]
     public async Task<IActionResult> Get(
-        [FromQuery] int days = 30,
-        [FromQuery] int limit = 10,
+        [FromQuery] LeaderboardQuery query,
         CancellationToken cancellationToken = default)
     {
-        if (days is < 1 or > 365)
-        {
-            return BadRequest(new
-            {
-                message = "Days must be between 1 and 365."
-            });
-        }
-
-        if (limit is < 1 or > 100)
+        if (query.Limit is < 1 or > 100)
         {
             return BadRequest(new
             {
@@ -44,8 +42,7 @@ public sealed class LeaderboardController: ApiControllerBase
         }
 
         var result = await _leaderboardService.GetAsync(
-            days,
-            limit,
+            query.Limit,
             cancellationToken);
 
         return Ok(result);

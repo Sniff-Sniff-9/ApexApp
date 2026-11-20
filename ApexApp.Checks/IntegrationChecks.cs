@@ -1,5 +1,6 @@
 using ApexApp.Domain.Entities;
 using ApexApp.Infrastructure.Caching;
+using ApexApp.Infrastructure.Common;
 using ApexApp.Infrastructure.Data;
 using ApexApp.Infrastructure.Repositories;
 using ApexApp.Infrastructure.Services;
@@ -57,6 +58,7 @@ internal static class IntegrationChecks
         services.AddScoped<IActivityAnalyticsService, ActivityAnalyticsService>();
         services.AddScoped<IRewardAnalyticsService, RewardAnalyticsService>();
         services.AddScoped<IEngagementAnalyticsService, EngagementAnalyticsService>();
+        services.AddScoped<ILeaderboardService, LeaderboardService>();
         services.AddScoped<IDepartmentAnalyticsService, DepartmentAnalyticsService>();
         services.AddScoped<ICollaborationAnalyticsService, CollaborationAnalyticsService>();
         services.AddScoped<IAnalyticsInsightService, AnalyticsInsightService>();
@@ -379,6 +381,62 @@ internal static class IntegrationChecks
             {
                 CheckRunner.Ensure(employee.Change <= 0d, "declining employees must have non-positive change");
                 CheckRunner.Ensure(!string.IsNullOrWhiteSpace(employee.EmployeeRef), "reference required");
+            }
+        });
+
+        await runner.CheckAsync("leaderboard.engagement-ranking", async () =>
+        {
+            var leaderboardService = services.GetRequiredService<ILeaderboardService>();
+            var engagementLoader = services.GetRequiredService<IAnalyticsEngagementLoader>();
+            var dbContext = services.GetRequiredService<AppDbContext>();
+
+            const int limit = 10;
+
+            var activeUserIds = (await dbContext.Users
+                .AsNoTracking()
+                .Where(user => user.IsActive)
+                .Select(user => user.Id)
+                .ToListAsync())
+                .ToHashSet();
+
+            var snapshot = await engagementLoader.LoadAsync(DateTime.UtcNow);
+            var entries = await leaderboardService.GetAsync(limit);
+
+            CheckRunner.Ensure(
+                entries.Count == Math.Min(limit, activeUserIds.Count),
+                "leaderboard must fill the page from active users");
+
+            CheckRunner.Ensure(
+                entries.Select(entry => entry.Rank).SequenceEqual(Enumerable.Range(1, entries.Count)),
+                "ranks must be sequential");
+
+            CheckRunner.Ensure(
+                entries.Select(entry => entry.UserId).Distinct().Count() == entries.Count,
+                "users must be unique");
+
+            CheckRunner.Ensure(
+                entries.All(entry => activeUserIds.Contains(entry.UserId)),
+                "inactive users must not be ranked");
+
+            CheckRunner.Ensure(
+                entries.Zip(entries.Skip(1)).All(pair => pair.First.Score >= pair.Second.Score),
+                "scores must be ordered descending");
+
+            foreach (var entry in entries)
+            {
+                var expected = snapshot.ByUser.GetValueOrDefault(entry.UserId)?.Score ?? 0d;
+
+                CheckRunner.Ensure(
+                    Math.Abs(entry.Score - expected) < 0.1d,
+                    $"score of {entry.UserId} ({entry.Score}) must equal the engagement score ({expected})");
+
+                var tier = EngagementScoring.ResolveTier(entry.Score);
+
+                CheckRunner.Ensure(
+                    entry.Status == tier.Code
+                        && entry.StatusTitle == tier.Title
+                        && entry.StatusRank == tier.Rank,
+                    "tier must match the score");
             }
         });
 

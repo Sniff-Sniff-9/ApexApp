@@ -149,7 +149,7 @@ public sealed class ThankService : IThankService
         await dbContext.SaveChangesAsync(cancellationToken);
         await dbTransaction.CommitAsync(cancellationToken);
 
-        // The leaderboard aggregates the number of thanks received.
+        // Received thanks feed the engagement score the leaderboard is ranked by.
         _cache.RemoveByPrefix(CacheKeys.LeaderboardPrefix);
 
         try

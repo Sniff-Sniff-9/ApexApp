@@ -5,8 +5,8 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 namespace ApexApp.Infrastructure.Caching;
 
 /// <summary>
-/// Сбрасывает кеш вовлечённости сразу после записи действий, которые участвуют в расчёте,
-/// чтобы пользователь не получал устаревший статус в пределах TTL.
+/// Сбрасывает кеш вовлечённости и лидерборда сразу после записи действий, которые
+/// участвуют в расчёте, чтобы пользователь не получал устаревший статус в пределах TTL.
 /// </summary>
 public sealed class EngagementCacheInvalidationInterceptor(ICacheService cache) : SaveChangesInterceptor
 {
@@ -48,6 +48,7 @@ public sealed class EngagementCacheInvalidationInterceptor(ICacheService cache) 
 
         var userIds = new HashSet<Guid>();
         var analyticsAffected = false;
+        var leaderboardAffected = false;
 
         foreach (var entry in changed)
         {
@@ -63,6 +64,19 @@ public sealed class EngagementCacheInvalidationInterceptor(ICacheService cache) 
                 or Quest
                 or Survey
                 or User;
+
+            // The leaderboard is ranked by the engagement score, so any write that
+            // changes an engagement source (or the displayed profile) must drop the
+            // cached ranking as well.
+            if (entry.Entity is EventParticipant
+                or QuestParticipation
+                or SurveyResponse
+                or Thank
+                or QuestStepCompletion
+                or User)
+            {
+                leaderboardAffected = true;
+            }
 
             switch (entry.Entity)
             {
@@ -89,6 +103,11 @@ public sealed class EngagementCacheInvalidationInterceptor(ICacheService cache) 
         foreach (var userId in userIds)
         {
             cache.Remove(CacheKeys.Engagement(userId));
+        }
+
+        if (leaderboardAffected)
+        {
+            cache.RemoveByPrefix(CacheKeys.LeaderboardPrefix);
         }
 
         // Аналитика строится из этих же данных; короткие TTL не гарантируют
